@@ -43,6 +43,12 @@ CHINA_RE = re.compile(
     r"xi jinping|xinjiang|tibet|macau|yuan|renminbi|huawei|tiktok|bytedance|"
     r"alibaba|tencent|byd|xiaomi|deepseek|tsmc|pboc)\b", re.IGNORECASE)
 
+AI_RE = re.compile(
+    r"\b(ai|a\.i\.|artificial intelligence|machine learning|deep learning|"
+    r"generative|chatgpt|openai|anthropic|claude|gemini|llm|large language model|"
+    r"deepmind|copilot|midjourney|stable diffusion|hugging ?face|neural network|"
+    r"chatbot|agentic|gpt-?\d)\b", re.IGNORECASE)
+
 
 # ---------- 抓取 ----------
 def strip_html(text):
@@ -175,6 +181,24 @@ def collect():
         result[cat] = merged[:MAX_PER_CAT]
         ok = sum(1 for f in feeds if cache.get(f["url"]))
         print(f"[info] {cat}: {len(result[cat])} candidates from {ok}/{len(feeds)} feeds", file=sys.stderr)
+
+    # AI 归位：把「科技」板块里的 AI 相关条目移进「AI」板块，科技板块只留非 AI，
+    # 避免同一 AI 报道在两个板块重复出现（财经/国际的 AI 话题保留原板块）。
+    if "ai" in result and "tech" in result:
+        ai_keys = {norm_title(x["title"]) for x in result["ai"]}
+        kept, moved = [], 0
+        for it in result["tech"]:
+            if AI_RE.search(it["title"] + " " + it["desc"]):
+                k = norm_title(it["title"])
+                if k not in ai_keys:
+                    ai_keys.add(k)
+                    result["ai"].append(it)
+                moved += 1
+            else:
+                kept.append(it)
+        result["tech"] = kept
+        result["ai"] = result["ai"][:MAX_PER_CAT + 8]
+        print(f"[info] moved {moved} AI items tech→ai; tech now {len(result['tech'])}", file=sys.stderr)
 
     if "china" in result:
         cseen = {norm_title(x["title"]) for x in result["china"]}
