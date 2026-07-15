@@ -1,0 +1,140 @@
+{
+  "feeds": {
+    "world": [
+      {
+        "name": "NYT World",
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+      },
+      {
+        "name": "Guardian World",
+        "url": "https://www.theguardian.com/world/rss"
+      },
+      {
+        "name": "WSJ World",
+        "url": "https://feeds.content.dowjones.io/public/rss/RSSWorldNews"
+      },
+      {
+        "name": "BBC World",
+        "url": "https://feeds.bbci.co.uk/news/world/rss.xml"
+      },
+      {
+        "name": "Reuters",
+        "url": "https://news.google.com/rss/search?q=when:24h+site:reuters.com&hl=en-US&gl=US&ceid=US:en"
+      },
+      {
+        "name": "Economist Intl",
+        "url": "https://www.economist.com/international/rss.xml"
+      },
+      {
+        "name": "Politico",
+        "url": "https://rss.politico.com/politics-news.xml"
+      },
+      {
+        "name": "Politico EU",
+        "url": "https://www.politico.eu/feed/"
+      },
+      {
+        "name": "DW",
+        "url": "https://rss.dw.com/rdf/rss-en-all"
+      },
+      {
+        "name": "Spiegel Intl",
+        "url": "https://www.spiegel.de/international/index.rss"
+      },
+      {
+        "name": "Japan Times",
+        "url": "https://www.japantimes.co.jp/feed/"
+      },
+      {
+        "name": "CNA",
+        "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml"
+      },
+      {
+        "name": "Straits Times",
+        "url": "https://www.straitstimes.com/news/world/rss.xml"
+      }
+    ],
+    "finance": [
+      {
+        "name": "WSJ Markets",
+        "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
+      },
+      {
+        "name": "FT",
+        "url": "https://www.ft.com/rss/home"
+      },
+      {
+        "name": "MarketWatch",
+        "url": "http://feeds.marketwatch.com/marketwatch/topstories/"
+      },
+      {
+        "name": "CNBC",
+        "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+      },
+      {
+        "name": "Economist Finance",
+        "url": "https://www.economist.com/finance-and-economics/rss.xml"
+      },
+      {
+        "name": "Nikkei Asia",
+        "url": "https://asia.nikkei.com/rss/feed/nar"
+      }
+    ],
+    "tech": [
+      {
+        "name": "TechCrunch",
+        "url": "https://techcrunch.com/feed/"
+      },
+      {
+        "name": "The Verge",
+        "url": "https://www.theverge.com/rss/index.xml"
+      },
+      {
+        "name": "Ars Technica",
+        "url": "http://feeds.arstechnica.com/arstechnica/index"
+      },
+      {
+        "name": "Wired",
+        "url": "https://www.wired.com/feed/rss"
+      },
+      {
+        "name": "Economist SciTech",
+        "url": "https://www.economist.com/science-and-technology/rss.xml"
+      }
+    ],
+    "china": [
+      {
+        "name": "Guardian China",
+        "url": "https://www.theguardian.com/world/china/rss"
+      },
+      {
+        "name": "FT China",
+        "url": "https://www.ft.com/china?format=rss"
+      },
+      {
+        "name": "Economist China",
+        "url": "https://www.economist.com/china/rss.xml"
+      },
+      {
+        "name": "NYT Asia",
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/AsiaPacific.xml",
+        "china_filter": true
+      },
+      {
+        "name": "BBC Asia",
+        "url": "https://feeds.bbci.co.uk/news/world/asia/rss.xml",
+        "china_filter": true
+      },
+      {
+        "name": "Nikkei China",
+        "url": "https://asia.nikkei.com/rss/feed/nar",
+        "china_filter": true
+      },
+      {
+        "name": "CNA China",
+        "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
+        "china_filter": true
+      }
+    ]
+  }
+}
