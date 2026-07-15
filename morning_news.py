@@ -34,6 +34,7 @@ BOARD_META = {
     "world":   ("🌍", "国际大事"),
     "finance": ("💰", "财经要闻"),
     "tech":    ("💻", "科技动态"),
+    "ai":      ("🤖", "AI 前沿"),
     "china":   ("🇨🇳", "中国相关"),
 }
 
@@ -276,7 +277,7 @@ def main():
     date_hdr = f"🗞 <b>每日晨报 · {today.year}年{today.month}月{today.day}日</b>"
 
     candidates = collect()
-    order = ["world", "finance", "tech", "china"]
+    order = ["world", "finance", "tech", "ai", "china"]
     first = True
     sent = 0
     for cat in order:

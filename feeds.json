@@ -102,6 +102,36 @@
         "url": "https://www.economist.com/science-and-technology/rss.xml"
       }
     ],
+    "ai": [
+      {
+        "name": "TechCrunch AI",
+        "url": "https://techcrunch.com/category/artificial-intelligence/feed/"
+      },
+      {
+        "name": "The Verge AI",
+        "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+      },
+      {
+        "name": "MIT Tech Review",
+        "url": "https://www.technologyreview.com/topic/artificial-intelligence/feed/"
+      },
+      {
+        "name": "Ars Technica AI",
+        "url": "https://arstechnica.com/ai/feed/"
+      },
+      {
+        "name": "Wired AI",
+        "url": "https://www.wired.com/feed/tag/ai/latest/rss"
+      },
+      {
+        "name": "VentureBeat AI",
+        "url": "https://venturebeat.com/category/ai/feed/"
+      },
+      {
+        "name": "Reuters/FT AI",
+        "url": "https://news.google.com/rss/search?q=AI+when:1d+site:reuters.com+OR+site:ft.com&hl=en-US&gl=US&ceid=US:en"
+      }
+    ],
     "china": [
       {
         "name": "Guardian China",
