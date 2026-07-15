@@ -33,6 +33,7 @@ FEEDS = json.loads((Path(__file__).parent / "feeds.json").read_text(encoding="ut
 BOARD_META = {
     "world":   ("🌍", "国际大事"),
     "finance": ("💰", "财经要闻"),
+    "crypto":  ("🪙", "数字货币"),
     "tech":    ("💻", "科技动态"),
     "ai":      ("🤖", "AI 前沿"),
     "china":   ("🇨🇳", "中国相关"),
@@ -48,6 +49,11 @@ AI_RE = re.compile(
     r"generative|chatgpt|openai|anthropic|claude|gemini|llm|large language model|"
     r"deepmind|copilot|midjourney|stable diffusion|hugging ?face|neural network|"
     r"chatbot|agentic|gpt-?\d)\b", re.IGNORECASE)
+
+CRYPTO_RE = re.compile(
+    r"\b(crypto|cryptocurrenc(y|ies)|bitcoin|btc|ethereum|blockchain|stablecoin|"
+    r"defi|coinbase|binance|ripple|xrp|solana|dogecoin|memecoin|altcoin|web3|"
+    r"tether|usdt|usdc|nft)\b", re.IGNORECASE)
 
 
 # ---------- 抓取 ----------
@@ -182,6 +188,24 @@ def collect():
         ok = sum(1 for f in feeds if cache.get(f["url"]))
         print(f"[info] {cat}: {len(result[cat])} candidates from {ok}/{len(feeds)} feeds", file=sys.stderr)
 
+    # 数字货币归位：把「财经」板块里的加密货币相关条目移进「数字货币」板块，
+    # 财经板块只留非币圈内容，避免重复。
+    if "crypto" in result and "finance" in result:
+        ck = {norm_title(x["title"]) for x in result["crypto"]}
+        kept, moved = [], 0
+        for it in result["finance"]:
+            if CRYPTO_RE.search(it["title"] + " " + it["desc"]):
+                k = norm_title(it["title"])
+                if k not in ck:
+                    ck.add(k)
+                    result["crypto"].append(it)
+                moved += 1
+            else:
+                kept.append(it)
+        result["finance"] = kept
+        result["crypto"] = result["crypto"][:MAX_PER_CAT + 8]
+        print(f"[info] moved {moved} crypto items finance→crypto; finance now {len(result['finance'])}", file=sys.stderr)
+
     # AI 归位：把「科技」板块里的 AI 相关条目移进「AI」板块，科技板块只留非 AI，
     # 避免同一 AI 报道在两个板块重复出现（财经/国际的 AI 话题保留原板块）。
     if "ai" in result and "tech" in result:
@@ -301,7 +325,7 @@ def main():
     date_hdr = f"🗞 <b>每日晨报 · {today.year}年{today.month}月{today.day}日</b>"
 
     candidates = collect()
-    order = ["world", "finance", "tech", "ai", "china"]
+    order = ["world", "finance", "crypto", "tech", "ai", "china"]
     first = True
     sent = 0
     for cat in order:

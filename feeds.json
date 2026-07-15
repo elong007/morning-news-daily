@@ -80,6 +80,32 @@
         "url": "https://asia.nikkei.com/rss/feed/nar"
       }
     ],
+    "crypto": [
+      {
+        "name": "CoinDesk",
+        "url": "https://www.coindesk.com/arc/outboundfeeds/rss/"
+      },
+      {
+        "name": "Cointelegraph",
+        "url": "https://cointelegraph.com/rss"
+      },
+      {
+        "name": "Decrypt",
+        "url": "https://decrypt.co/feed"
+      },
+      {
+        "name": "The Block",
+        "url": "https://www.theblock.co/rss.xml"
+      },
+      {
+        "name": "Bitcoin Magazine",
+        "url": "https://bitcoinmagazine.com/feed"
+      },
+      {
+        "name": "Reuters/FT Crypto",
+        "url": "https://news.google.com/rss/search?q=(crypto+OR+bitcoin+OR+ethereum)+when:1d+site:reuters.com+OR+site:ft.com+OR+site:cnbc.com&hl=en-US&gl=US&ceid=US:en"
+      }
+    ],
     "tech": [
       {
         "name": "TechCrunch",
