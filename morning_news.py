@@ -27,6 +27,9 @@ PICK = 10                 # 每板块最终挑选条数
 DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 TG_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TG_CHAT = os.environ["TELEGRAM_CHAT_ID"]
+# 口播稿转音频用的语音；可用 TTS_VOICE 环境变量覆盖。常用中文：
+# zh-CN-YunjianNeural(男·新闻)  zh-CN-XiaoxiaoNeural(女·温暖)  zh-CN-YunxiNeural(男·活泼)
+TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunjianNeural")
 
 FEEDS = json.loads((Path(__file__).parent / "feeds.json").read_text(encoding="utf-8"))["feeds"]
 
@@ -356,6 +359,33 @@ def split_for_telegram(text, limit=3800):
     return chunks
 
 
+# ---------- 语音合成 ----------
+def tts_generate(text, path):
+    """用 Edge TTS 把口播稿合成为 MP3（免费、无需 key）。"""
+    import asyncio
+    import edge_tts
+
+    async def _run():
+        await edge_tts.Communicate(text, TTS_VOICE).save(path)
+    asyncio.run(_run())
+
+
+def tg_send_audio(path, title, caption):
+    import requests
+    with open(path, "rb") as f:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TG_TOKEN}/sendAudio",
+            data={"chat_id": TG_CHAT, "title": title,
+                  "performer": "每日晨报", "caption": caption},
+            files={"audio": ("morning_brief.mp3", f, "audio/mpeg")},
+            timeout=180,
+        )
+    ok = r.ok and r.json().get("ok")
+    if not ok:
+        print(f"[error] sendAudio: {r.text[:200]}", file=sys.stderr)
+    return ok
+
+
 # ---------- Telegram ----------
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -434,6 +464,17 @@ def main():
                     sent += 1
                 time.sleep(1)
             print(f"[info] broadcast: {len(script)} chars in {len(chunks)} msgs", file=sys.stderr)
+
+            # 语音版：把口播稿合成 MP3 发送（失败不影响整体）
+            try:
+                audio_path = "morning_brief.mp3"
+                tts_generate(script, audio_path)
+                cap = f"📻 每日新闻晨报 · {date_str} · 语音版"
+                if tg_send_audio(audio_path, f"每日新闻晨报 {date_str}", cap):
+                    sent += 1
+                    print("[info] audio sent", file=sys.stderr)
+            except Exception as e:
+                print(f"[warn] TTS/audio failed: {e}", file=sys.stderr)
         else:
             print("[warn] broadcast script empty, skipped", file=sys.stderr)
 
