@@ -28,8 +28,9 @@ DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 TG_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TG_CHAT = os.environ["TELEGRAM_CHAT_ID"]
 # 口播稿转音频用的语音；可用 TTS_VOICE 环境变量覆盖。常用中文：
-# zh-CN-YunjianNeural(男·新闻)  zh-CN-XiaoxiaoNeural(女·温暖)  zh-CN-YunxiNeural(男·活泼)
-TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunjianNeural")
+# zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
+# zh-CN-YunjianNeural(男·新闻腔)  zh-CN-XiaoyiNeural(女·亲切)
+TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunxiNeural")
 
 FEEDS = json.loads((Path(__file__).parent / "feeds.json").read_text(encoding="utf-8"))["feeds"]
 
@@ -297,14 +298,16 @@ def deepseek_broadcast(picked, date_str):
                      "来源": it.get("source", "")} for it in items],
         })
     sys_prompt = (
-        "你是一位专业的早间新闻主播。根据给定的、已翻译成中文的新闻，撰写一篇连贯正式、"
-        "适合直接朗读的中文新闻口播稿。要求："
-        f"①开场问候：'各位早上好，今天是{date_str}，欢迎收听每日新闻晨报，以下是今天的主要内容。'；"
-        "②严格按给定板块顺序播报，每个板块开头用自然的过渡语引入（如'首先关注国际要闻'、"
-        "'接下来是财经方面'、'来看数字货币市场'、'科技领域'、'人工智能前沿'、'最后是与中国相关的报道'）；"
-        "③每条新闻改写成口语化、适合朗读的1-2句连贯陈述，来源自然融入（如'据路透社报道'、'《金融时报》称'）；"
-        "④绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注；用中文全角标点；"
-        "⑤段落之间空一行；⑥结尾：'以上就是今天的新闻晨报，感谢您的收听，我们明天再会。'。"
+        "你是一位风格轻松亲切的早间新闻主播。根据给定的、已翻译成中文的新闻，撰写一篇连贯、"
+        "适合朗读的中文新闻口播稿。要求："
+        f"①开场用轻松的问候语，自然带出今天是{date_str}，欢迎收听每日新闻晨报；"
+        "②按给定板块顺序播报，每个板块用自然口语化的过渡语引入（如'先看看国际上发生了什么'、"
+        "'再来聊聊财经'、'数字货币这边'、'科技圈'、'AI方面'、'最后说说和中国有关的'）；"
+        "③根据新闻重要性分配篇幅：重大新闻展开2-3句讲清楚，次要新闻一句带过、或把同类的合并着说，"
+        "不重要的可以略过不播；来源自然融入（如'据路透社报道'、'《金融时报》说'）；"
+        "④全文严格控制在1500到1800个汉字之间，语气轻松自然、像朋友聊天，不要严肃的播音腔；"
+        "⑤绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注；用中文全角标点；"
+        "⑥段落之间空一行；⑦结尾用轻松的话收尾并预告明天再会。"
         "直接输出口播稿正文，不要任何前后说明。"
     )
     user_prompt = "新闻内容（JSON，按此顺序播报）：\n" + json.dumps(boards, ensure_ascii=False)
