@@ -283,6 +283,79 @@ def deepseek_pick(cat_name, candidates):
             time.sleep(5)
 
 
+# ---------- 口播稿 ----------
+def deepseek_broadcast(picked, date_str):
+    """picked: [(cat, [items...]), ...]，items 已翻译好。返回一整篇可朗读的中文口播稿纯文本。"""
+    boards = []
+    for cat, items in picked:
+        boards.append({
+            "板块": BOARD_META[cat][1],
+            "新闻": [{"标题": it.get("zh_title", ""), "摘要": it.get("zh_summary", ""),
+                     "来源": it.get("source", "")} for it in items],
+        })
+    sys_prompt = (
+        "你是一位专业的早间新闻主播。根据给定的、已翻译成中文的新闻，撰写一篇连贯正式、"
+        "适合直接朗读的中文新闻口播稿。要求："
+        f"①开场问候：'各位早上好，今天是{date_str}，欢迎收听每日新闻晨报，以下是今天的主要内容。'；"
+        "②严格按给定板块顺序播报，每个板块开头用自然的过渡语引入（如'首先关注国际要闻'、"
+        "'接下来是财经方面'、'来看数字货币市场'、'科技领域'、'人工智能前沿'、'最后是与中国相关的报道'）；"
+        "③每条新闻改写成口语化、适合朗读的1-2句连贯陈述，来源自然融入（如'据路透社报道'、'《金融时报》称'）；"
+        "④绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注；用中文全角标点；"
+        "⑤段落之间空一行；⑥结尾：'以上就是今天的新闻晨报，感谢您的收听，我们明天再会。'。"
+        "直接输出口播稿正文，不要任何前后说明。"
+    )
+    user_prompt = "新闻内容（JSON，按此顺序播报）：\n" + json.dumps(boards, ensure_ascii=False)
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "system", "content": sys_prompt},
+                     {"role": "user", "content": user_prompt}],
+        "temperature": 0.5,
+        "max_tokens": 8000,
+        "stream": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions", data=body,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {DEEPSEEK_KEY}"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                out = json.loads(resp.read())
+            return out["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            print(f"[warn] deepseek broadcast attempt {attempt}: {e}", file=sys.stderr)
+            if attempt == 2:
+                return ""
+            time.sleep(5)
+
+
+def split_for_telegram(text, limit=3800):
+    """按段落把长文切成不超过 limit 的块，尽量不断句。"""
+    paras = [p for p in text.split("\n\n") if p.strip()]
+    chunks, cur = [], ""
+    for p in paras:
+        if len(cur) + len(p) + 2 <= limit:
+            cur = (cur + "\n\n" + p) if cur else p
+        else:
+            if cur:
+                chunks.append(cur)
+            if len(p) <= limit:
+                cur = p
+            else:  # 单段超长，按句号硬切
+                cur = ""
+                for sent in re.split(r"(?<=[。！？])", p):
+                    if len(cur) + len(sent) <= limit:
+                        cur += sent
+                    else:
+                        if cur:
+                            chunks.append(cur)
+                        cur = sent
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
 # ---------- Telegram ----------
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -306,9 +379,11 @@ def build_message(cat, items, header=None):
     return "\n\n".join(lines)
 
 
-def tg_send(text):
+def tg_send(text, parse_mode="HTML"):
     payload = {"chat_id": int(TG_CHAT), "text": text,
-               "parse_mode": "HTML", "disable_web_page_preview": True}
+               "disable_web_page_preview": True}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(
         f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", data=body,
@@ -328,6 +403,7 @@ def main():
     order = ["world", "finance", "crypto", "tech", "ai", "china"]
     first = True
     sent = 0
+    picked = []  # [(cat, items)]，供口播稿使用
     for cat in order:
         cand = candidates.get(cat, [])
         if not cand:
@@ -337,6 +413,7 @@ def main():
         if not items:
             print(f"[warn] {cat}: deepseek returned nothing, skip", file=sys.stderr)
             continue
+        picked.append((cat, items))
         msg = build_message(cat, items, header=date_hdr if first else None)
         if len(msg) > 4000:
             msg = msg[:3990] + "…"
@@ -344,6 +421,22 @@ def main():
             sent += 1
             first = False
         time.sleep(1)
+
+    # 额外推送：完整版新闻口播稿
+    if picked:
+        date_str = f"{today.year}年{today.month}月{today.day}日"
+        script = deepseek_broadcast(picked, date_str)
+        if script:
+            chunks = split_for_telegram(script)
+            for i, chunk in enumerate(chunks):
+                head = "📻 <b>今日新闻口播稿</b>（可直接朗读）\n\n" if i == 0 else ""
+                if tg_send(head + esc(chunk)):
+                    sent += 1
+                time.sleep(1)
+            print(f"[info] broadcast: {len(script)} chars in {len(chunks)} msgs", file=sys.stderr)
+        else:
+            print("[warn] broadcast script empty, skipped", file=sys.stderr)
+
     print(f"[info] done, {sent} messages sent", file=sys.stderr)
     if sent == 0:
         sys.exit(1)
