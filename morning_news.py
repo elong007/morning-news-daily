@@ -28,9 +28,9 @@ DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 TG_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TG_CHAT = os.environ["TELEGRAM_CHAT_ID"]
 # 口播稿转音频用的语音；可用 TTS_VOICE 环境变量覆盖。常用中文：
-# zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
-# zh-CN-YunjianNeural(男·新闻腔)  zh-CN-XiaoyiNeural(女·亲切)
-TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-YunxiNeural")
+# zh-CN-XiaoyiNeural(女·轻快活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
+# zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-YunjianNeural(男·新闻腔)
+TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-XiaoyiNeural")
 
 FEEDS = json.loads((Path(__file__).parent / "feeds.json").read_text(encoding="utf-8"))["feeds"]
 
