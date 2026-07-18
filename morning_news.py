@@ -305,7 +305,8 @@ def deepseek_broadcast(picked, date_str):
         "'再来聊聊财经'、'数字货币这边'、'科技圈'、'AI方面'、'最后说说和中国有关的'）；"
         "③根据新闻重要性分配篇幅：重大新闻展开2-3句讲清楚，次要新闻一句带过、或把同类的合并着说，"
         "不重要的可以略过不播；来源自然融入（如'据路透社报道'、'《金融时报》说'）；"
-        "④全文严格控制在1500到1800个汉字之间，语气轻松自然、像朋友聊天，不要严肃的播音腔；"
+        "④全文严格控制在1500到1800个汉字之间（宁短勿长，务必不超过1800字），"
+        "语气轻松自然、像朋友聊天，不要严肃的播音腔；"
         "⑤绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注；用中文全角标点；"
         "⑥段落之间空一行；⑦结尾用轻松的话收尾并预告明天再会。"
         "直接输出口播稿正文，不要任何前后说明。"
@@ -334,6 +335,40 @@ def deepseek_broadcast(picked, date_str):
             if attempt == 2:
                 return ""
             time.sleep(5)
+
+
+def hanzi_count(s):
+    return len(re.findall(r"[一-鿿]", s))
+
+
+def deepseek_compress(text, lo=1500, hi=1800):
+    """口播稿超字数时压缩一次，保持轻松口吻、开场/过渡/结尾结构不变。"""
+    sys_prompt = (
+        f"下面是一篇中文新闻口播稿，但偏长。请精简改写，使全文汉字数落在 {lo} 到 {hi} 之间"
+        "（宁短勿长）。保留轻松亲切的口吻、开场问候、板块过渡和结尾；优先压缩次要新闻、"
+        "合并同类内容，重要新闻保留。不要编号/链接/Markdown符号，用中文全角标点。"
+        "直接输出精简后的正文。"
+    )
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "system", "content": sys_prompt},
+                     {"role": "user", "content": text}],
+        "temperature": 0.4,
+        "max_tokens": 8000,
+        "stream": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions", data=body,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {DEEPSEEK_KEY}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            out = json.loads(resp.read())
+        return out["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"[warn] deepseek compress: {e}", file=sys.stderr)
+        return text
 
 
 def split_for_telegram(text, limit=3800):
@@ -459,7 +494,14 @@ def main():
     if picked:
         date_str = f"{today.year}年{today.month}月{today.day}日"
         script = deepseek_broadcast(picked, date_str)
+        if script and hanzi_count(script) > 1850:  # 超字数则压缩一次
+            hz0 = hanzi_count(script)
+            compressed = deepseek_compress(script)
+            if compressed and hanzi_count(compressed) < hz0:
+                print(f"[info] compressed {hz0} -> {hanzi_count(compressed)} hanzi", file=sys.stderr)
+                script = compressed
         if script:
+            print(f"[info] broadcast final: {hanzi_count(script)} hanzi", file=sys.stderr)
             chunks = split_for_telegram(script)
             for i, chunk in enumerate(chunks):
                 head = "📻 <b>今日新闻口播稿</b>（可直接朗读）\n\n" if i == 0 else ""
