@@ -394,7 +394,9 @@ def deepseek_pick(cat_name, candidates):
 
 # ---------- 口播稿 ----------
 def deepseek_broadcast(picked, date_str, market_text=""):
-    """picked: [(cat, [items...]), ...]，items 已翻译好。返回一整篇可朗读的中文口播稿纯文本。"""
+    """picked: [(cat, [items...]), ...]，items 已翻译好。
+    返回 (script, section_starts)：script 为口播稿正文；
+    section_starts 为 [{"board": 板块名, "start": 该板块起始句}]（后续做章节/字幕定位用）。"""
     boards = []
     for cat, items in picked:
         boards.append({
@@ -441,8 +443,16 @@ def deepseek_broadcast(picked, date_str, market_text=""):
 
         "【三、格式禁令】\n"
         "篇幅按新闻的数量和重要性灵活把握，重要的多讲、次要的少讲，不设字数上限。"
-        "绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注、阿拉伯数字、英文标点。"
-        "只用中文全角标点。直接输出口播稿正文，不要任何前后说明。"
+        "口播稿正文里绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注、阿拉伯数字、英文标点，"
+        "只用中文全角标点（此禁令针对 script 正文，不针对下面的 JSON 结构本身）。\n"
+
+        "【四、输出格式】\n"
+        "只返回一个 JSON 对象，不要代码块标记、不要多余说明：\n"
+        "{\"script\": \"完整口播稿正文，含开场广告语、问候、各板块过渡语、结尾\", "
+        "\"section_starts\": [{\"board\": \"板块名\", \"start\": \"该板块的第一句话（即过渡语那一句），"
+        "必须与 script 里的原句一字不差\"}]}。"
+        "section_starts 按播报顺序列出每一个实际播报到的板块，board 用给定的板块名称，"
+        "start 必须能在 script 里原样找到。"
     )
     user_prompt = "新闻内容（JSON，按此顺序播报）：\n" + json.dumps(boards, ensure_ascii=False)
     if market_text:
@@ -453,6 +463,7 @@ def deepseek_broadcast(picked, date_str, market_text=""):
                      {"role": "user", "content": user_prompt}],
         "temperature": 0.7,   # 口语稿需要一点随机性，太低会写得整齐但呆板
         "max_tokens": 8000,
+        "response_format": {"type": "json_object"},
         "stream": False,
     }
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -464,11 +475,15 @@ def deepseek_broadcast(picked, date_str, market_text=""):
         try:
             with urllib.request.urlopen(req, timeout=180) as resp:
                 out = json.loads(resp.read())
-            return out["choices"][0]["message"]["content"].strip()
+            obj = json.loads(out["choices"][0]["message"]["content"])
+            script = (obj.get("script") or "").strip()
+            starts = [s for s in (obj.get("section_starts") or [])
+                      if isinstance(s, dict) and s.get("start")]
+            return script, starts
         except Exception as e:
             print(f"[warn] deepseek broadcast attempt {attempt}: {e}", file=sys.stderr)
             if attempt == 2:
-                return ""
+                return "", []
             time.sleep(5)
 
 
@@ -688,11 +703,11 @@ def tg_send(text, parse_mode="HTML"):
     return r.get("ok", False)
 
 
-def write_archive(script, picked, date_str, today):
+def write_archive(script, picked, date_str, today, section_starts=None):
     """把口播稿落盘到 archive/，供下游（字幕视频等）取用。
 
     archive/YYYY-MM-DD.txt   纯文本口播稿
-    archive/YYYY-MM-DD.json  稿子 + 各板块标题，便于程序消费
+    archive/YYYY-MM-DD.json  稿子 + 各板块标题 + 各板块起始句，便于程序消费
     archive/latest.txt|json  永远指向最新一期
     """
     d = Path(__file__).parent / "archive"
@@ -703,6 +718,7 @@ def write_archive(script, picked, date_str, today):
         "dateStr": date_str,
         "hanzi": hanzi_count(script),
         "script": script,
+        "sectionStarts": section_starts or [],
         "boards": [
             {"name": BOARD_META[cat][1],
              "emoji": BOARD_META[cat][0],
@@ -751,7 +767,11 @@ def main():
     # 额外推送：完整版新闻口播稿
     if picked:
         date_str = f"{today.year}年{today.month}月{today.day}日"
-        script = deepseek_broadcast(picked, date_str, market_text=market_txt)
+        script, section_starts = deepseek_broadcast(picked, date_str, market_text=market_txt)
+        if section_starts:
+            preview = " | ".join(f"{s.get('board', '?')}:{s.get('start', '')[:16]}"
+                                 for s in section_starts)
+            print(f"[info] section starts: {preview}", file=sys.stderr)
         if script:  # 合规审核：违反法律法规/社会主义核心价值观则中性化改写
             compliant, issues, revised = deepseek_review(script)
             if not compliant and revised:
@@ -761,7 +781,7 @@ def main():
                 print("[info] compliance: OK", file=sys.stderr)
         if script:  # 不再限制字数上限，篇幅由内容重要性决定
             print(f"[info] broadcast final: {hanzi_count(script)} hanzi", file=sys.stderr)
-            write_archive(script, picked, date_str, today)
+            write_archive(script, picked, date_str, today, section_starts)
             chunks = split_for_telegram(script)
             for i, chunk in enumerate(chunks):
                 head = "📻 <b>今日新闻口播稿</b>（可直接朗读）\n\n" if i == 0 else ""
