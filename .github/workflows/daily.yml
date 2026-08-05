@@ -5,6 +5,14 @@ on:
     # UTC 00:00 = 北京时间 08:00。GitHub 定时任务高峰期可能延迟若干分钟。
     - cron: "0 0 * * *"
   workflow_dispatch:        # 允许手动触发（测试用）
+    inputs:
+      dry_run:
+        description: "只生成口播稿并归档，不推 Telegram（重跑不刷屏）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write           # 需要把 archive/ 回写仓库
 
 jobs:
   morning-news:
@@ -29,4 +37,17 @@ jobs:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           MINIMAX_GROUP_ID: ${{ secrets.MINIMAX_GROUP_ID }}
           MINIMAX_VOICE_ID: ${{ secrets.MINIMAX_VOICE_ID }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python morning_news.py
+
+      - name: 归档口播稿
+        run: |
+          if [ -z "$(git status --porcelain archive)" ]; then
+            echo "archive 无变化，跳过提交"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add archive
+          git commit -m "归档口播稿 $(date -u -d '+8 hours' +%F)"
+          git push

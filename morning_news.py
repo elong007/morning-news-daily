@@ -27,8 +27,10 @@ MAX_PER_CAT = 28          # 每板块交给 DeepSeek 的候选上限
 PICK = 10                 # 每板块最终挑选条数
 
 DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
-TG_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TG_CHAT = os.environ["TELEGRAM_CHAT_ID"]
+# DRY_RUN=1 时只生成不推送（重跑不会给 Telegram 刷屏），此时两个 TG 变量可缺省
+DRY_RUN = os.environ.get("DRY_RUN", "") == "1"
+TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") if DRY_RUN else os.environ["TELEGRAM_BOT_TOKEN"]
+TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "0") if DRY_RUN else os.environ["TELEGRAM_CHAT_ID"]
 # 口播稿转音频用的语音；可用 TTS_VOICE 环境变量覆盖。常用中文：
 # zh-CN-XiaoyiNeural(女·轻快活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
 # zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-YunjianNeural(男·新闻腔)
@@ -582,6 +584,9 @@ def tts_generate(text, path):
 
 
 def tg_send_audio(path, title, caption):
+    if DRY_RUN:
+        print(f"[dry-run] skip sendAudio ({path})", file=sys.stderr)
+        return True
     import requests
     with open(path, "rb") as f:
         r = requests.post(
@@ -623,6 +628,9 @@ def build_message(cat, items, header=None, extra=None):
 
 
 def tg_send(text, parse_mode="HTML"):
+    if DRY_RUN:
+        print(f"[dry-run] skip sendMessage ({len(text)} chars)", file=sys.stderr)
+        return True
     payload = {"chat_id": int(TG_CHAT), "text": text,
                "disable_web_page_preview": True}
     if parse_mode:
@@ -636,6 +644,35 @@ def tg_send(text, parse_mode="HTML"):
     if not r.get("ok"):
         print(f"[error] telegram: {r}", file=sys.stderr)
     return r.get("ok", False)
+
+
+def write_archive(script, picked, date_str, today):
+    """把口播稿落盘到 archive/，供下游（字幕视频等）取用。
+
+    archive/YYYY-MM-DD.txt   纯文本口播稿
+    archive/YYYY-MM-DD.json  稿子 + 各板块标题，便于程序消费
+    archive/latest.txt|json  永远指向最新一期
+    """
+    d = Path(__file__).parent / "archive"
+    d.mkdir(exist_ok=True)
+    stamp = today.strftime("%Y-%m-%d")
+    meta = {
+        "date": stamp,
+        "dateStr": date_str,
+        "hanzi": hanzi_count(script),
+        "script": script,
+        "boards": [
+            {"name": BOARD_META[cat][1],
+             "emoji": BOARD_META[cat][0],
+             "headlines": [it.get("zh_title", "") for it in items]}
+            for cat, items in picked
+        ],
+    }
+    for name in (stamp, "latest"):
+        (d / f"{name}.txt").write_text(script, encoding="utf-8")
+        (d / f"{name}.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[info] archived -> archive/{stamp}.txt", file=sys.stderr)
 
 
 def main():
@@ -681,6 +718,7 @@ def main():
                 script = compressed
         if script:
             print(f"[info] broadcast final: {hanzi_count(script)} hanzi", file=sys.stderr)
+            write_archive(script, picked, date_str, today)
             chunks = split_for_telegram(script)
             for i, chunk in enumerate(chunks):
                 head = "📻 <b>今日新闻口播稿</b>（可直接朗读）\n\n" if i == 0 else ""
