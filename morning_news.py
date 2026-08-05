@@ -439,7 +439,7 @@ def deepseek_broadcast(picked, date_str, market_text=""):
         "并把'你想了解什么新闻，欢迎告诉我。'作为全文最后一句。\n"
 
         "【三、格式禁令】\n"
-        "全文严格控制在1500到1800个汉字之间（宁短勿长，绝不超过1800字）。"
+        "篇幅按新闻的数量和重要性灵活把握，重要的多讲、次要的少讲，不设字数上限。"
         "绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注、阿拉伯数字、英文标点。"
         "只用中文全角标点。直接输出口播稿正文，不要任何前后说明。"
     )
@@ -521,7 +521,7 @@ def deepseek_review(text):
         "淫秽暴力恐怖、虚假谣言、违背公序良俗等。"
         "处理原则：在尽量保留新闻事实与信息量的前提下，把有问题的表述改写为客观、中性、"
         "符合中国大陆表述规范的说法（例如立场性形容词改中性、敏感定性改为事实陈述）；"
-        "确实无法合规的整条可删去。改写后全文汉字数仍须控制在1800字以内（宁短勿长）。"
+        "确实无法合规的整条可删去。"
         "只返回 JSON：{\"compliant\": true 或 false, "
         "\"issues\": \"简述发现的问题，没有则留空\", "
         "\"revised\": \"合规版口播稿全文；若原文本就合规则原样返回全文\"}。"
@@ -758,13 +758,7 @@ def main():
                 script = revised
             else:
                 print("[info] compliance: OK", file=sys.stderr)
-        if script and hanzi_count(script) > 1850:  # 超字数则压缩一次
-            hz0 = hanzi_count(script)
-            compressed = deepseek_compress(script)
-            if compressed and hanzi_count(compressed) < hz0:
-                print(f"[info] compressed {hz0} -> {hanzi_count(compressed)} hanzi", file=sys.stderr)
-                script = compressed
-        if script:
+        if script:  # 不再限制字数上限，篇幅由内容重要性决定
             print(f"[info] broadcast final: {hanzi_count(script)} hanzi", file=sys.stderr)
             write_archive(script, picked, date_str, today)
             chunks = split_for_telegram(script)
