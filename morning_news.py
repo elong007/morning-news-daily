@@ -5,7 +5,9 @@
 四个板块：world / finance / tech / china，每板块 10 条。
 
 需要的环境变量（GitHub Secrets）：
-  TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DEEPSEEK_API_KEY
+  必填：TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, DEEPSEEK_API_KEY
+  选填：MINIMAX_API_KEY, MINIMAX_GROUP_ID, MINIMAX_VOICE_ID（配齐则口播用克隆音色，
+        否则自动回落到免费的 Edge TTS）
 """
 import json
 import os
@@ -31,6 +33,12 @@ TG_CHAT = os.environ["TELEGRAM_CHAT_ID"]
 # zh-CN-XiaoyiNeural(女·轻快活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
 # zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-YunjianNeural(男·新闻腔)
 TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-XiaoyiNeural")
+# MiniMax 克隆音色（三项配齐才启用，缺任一项就走 Edge TTS）
+MM_KEY = os.environ.get("MINIMAX_API_KEY", "")
+MM_GROUP = os.environ.get("MINIMAX_GROUP_ID", "")
+MM_VOICE = os.environ.get("MINIMAX_VOICE_ID", "")
+MM_MODEL = os.environ.get("MINIMAX_MODEL", "speech-02-hd")
+MM_HOST = os.environ.get("MINIMAX_HOST", "https://api.minimax.chat")
 
 FEEDS = json.loads((Path(__file__).parent / "feeds.json").read_text(encoding="utf-8"))["feeds"]
 
@@ -242,6 +250,101 @@ def collect():
     return result
 
 
+# ---------- 行情数据 ----------
+YAHOO_QUOTES = [
+    ("上证指数", "000001.SS", "point"),
+    ("恒生指数", "^HSI", "point"),
+    ("纳斯达克", "^IXIC", "point"),
+    ("美元/人民币", "CNY=X", "fx"),
+]
+
+
+def _yahoo_quote(symbol):
+    import urllib.parse
+    url = ("https://query1.finance.yahoo.com/v8/finance/chart/"
+           + urllib.parse.quote(symbol) + "?interval=1d&range=1d")
+    data = http_get(url)
+    if not data:
+        return None
+    try:
+        m = json.loads(data)["chart"]["result"][0]["meta"]
+        price = m.get("regularMarketPrice")
+        prev = m.get("chartPreviousClose") or m.get("previousClose")
+        if price is None:
+            return None
+        chg = (price - prev) / prev * 100 if prev else None
+        return price, chg
+    except Exception as e:
+        print(f"[warn] yahoo {symbol}: {e}", file=sys.stderr)
+        return None
+
+
+def _coingecko():
+    data = http_get("https://api.coingecko.com/api/v3/simple/price"
+                    "?ids=bitcoin,ethereum&vs_currencies=usd&include_24hr_change=true")
+    if not data:
+        return {}
+    try:
+        j = json.loads(data)
+        return {
+            "比特币": (j["bitcoin"]["usd"], j["bitcoin"].get("usd_24h_change")),
+            "以太币": (j["ethereum"]["usd"], j["ethereum"].get("usd_24h_change")),
+        }
+    except Exception as e:
+        print(f"[warn] coingecko: {e}", file=sys.stderr)
+        return {}
+
+
+def fetch_market():
+    """返回 [(label, price, chg_pct, kind), ...]，kind ∈ point/fx/crypto。"""
+    rows = []
+    for label, sym, kind in YAHOO_QUOTES:
+        q = _yahoo_quote(sym)
+        if q:
+            rows.append((label, q[0], q[1], kind))
+    cg = _coingecko()
+    for label in ("比特币", "以太币"):
+        if label in cg:
+            rows.append((label, cg[label][0], cg[label][1], "crypto"))
+    print(f"[info] market: {len(rows)}/6 quotes", file=sys.stderr)
+    return rows
+
+
+def _fmt_price(v, kind):
+    if kind == "fx":
+        return f"{v:.4f}"
+    if kind == "crypto":
+        return f"${v:,.0f}" if v >= 1000 else f"${v:,.2f}"
+    return f"{v:,.2f}"
+
+
+def market_block_html(rows):
+    if not rows:
+        return ""
+    lines = ["📊 <b>今日市场速览</b>"]
+    for label, price, chg, kind in rows:
+        chg_s = f"  {'▲' if chg >= 0 else '▼'}{abs(chg):.2f}%" if chg is not None else ""
+        lines.append(f"{label} {_fmt_price(price, kind)}{chg_s}")
+    return "\n".join(lines)
+
+
+def market_text_plain(rows):
+    if not rows:
+        return ""
+    segs = []
+    for label, price, chg, kind in rows:
+        val = _fmt_price(price, kind).replace("$", "")
+        seg = f"{label}{val}"
+        if kind == "point":
+            seg += "点"
+        elif kind == "crypto":
+            seg += "美元"
+        if chg is not None:
+            seg += f"，{'上涨' if chg >= 0 else '下跌'}{abs(chg):.2f}%"
+        segs.append(seg)
+    return "；".join(segs) + "。"
+
+
 # ---------- DeepSeek 挑选+翻译 ----------
 def deepseek_pick(cat_name, candidates):
     numbered = [
@@ -288,7 +391,7 @@ def deepseek_pick(cat_name, candidates):
 
 
 # ---------- 口播稿 ----------
-def deepseek_broadcast(picked, date_str):
+def deepseek_broadcast(picked, date_str, market_text=""):
     """picked: [(cat, [items...]), ...]，items 已翻译好。返回一整篇可朗读的中文口播稿纯文本。"""
     boards = []
     for cat, items in picked:
@@ -297,6 +400,10 @@ def deepseek_broadcast(picked, date_str):
             "新闻": [{"标题": it.get("zh_title", ""), "摘要": it.get("zh_summary", ""),
                      "来源": it.get("source", "")} for it in items],
         })
+    market_clause = (
+        "在财经板块，先用一两句自然口语化地播报下面提供的'今日市场行情'——"
+        "依次带出各指数点位与涨跌幅、美元兑人民币汇率、比特币与以太币价格，数字必须准确、不要编造；"
+        if market_text else "")
     sys_prompt = (
         "你是一位风格轻松亲切的早间新闻主播。根据给定的、已翻译成中文的新闻，撰写一篇连贯、"
         "适合朗读的中文新闻口播稿。要求："
@@ -305,6 +412,7 @@ def deepseek_broadcast(picked, date_str):
         "'再来聊聊财经'、'数字货币这边'、'科技圈'、'AI方面'、'最后说说和中国有关的'）；"
         "③根据新闻重要性分配篇幅：重大新闻展开2-3句讲清楚，次要新闻一句带过、或把同类的合并着说，"
         "不重要的可以略过不播；来源自然融入（如'据路透社报道'、'《金融时报》说'）；"
+        + market_clause +
         "④全文严格控制在1500到1800个汉字之间（宁短勿长，务必不超过1800字），"
         "语气轻松自然、像朋友聊天，不要严肃的播音腔；"
         "⑤绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注；用中文全角标点；"
@@ -312,6 +420,8 @@ def deepseek_broadcast(picked, date_str):
         "直接输出口播稿正文，不要任何前后说明。"
     )
     user_prompt = "新闻内容（JSON，按此顺序播报）：\n" + json.dumps(boards, ensure_ascii=False)
+    if market_text:
+        user_prompt += "\n\n今日市场行情（财经板块请播报这些数字）：\n" + market_text
     payload = {
         "model": "deepseek-chat",
         "messages": [{"role": "system", "content": sys_prompt},
@@ -346,7 +456,8 @@ def deepseek_compress(text, lo=1500, hi=1800):
     sys_prompt = (
         f"下面是一篇中文新闻口播稿，但偏长。请精简改写，使全文汉字数落在 {lo} 到 {hi} 之间"
         "（宁短勿长）。保留轻松亲切的口吻、开场问候、板块过渡和结尾；优先压缩次要新闻、"
-        "合并同类内容，重要新闻保留。不要编号/链接/Markdown符号，用中文全角标点。"
+        "合并同类内容，重要新闻保留；财经板块的行情数字（指数点位、涨跌幅、汇率、币价）必须保留。"
+        "不要编号/链接/Markdown符号，用中文全角标点。"
         "直接输出精简后的正文。"
     )
     payload = {
@@ -398,14 +509,51 @@ def split_for_telegram(text, limit=3800):
 
 
 # ---------- 语音合成 ----------
+def minimax_tts(text, path):
+    """用 MiniMax T2A v2 + 克隆音色合成 MP3。未配置或失败返回 False。"""
+    if not (MM_KEY and MM_VOICE):
+        return False
+    url = f"{MM_HOST}/v1/t2a_v2" + (f"?GroupId={MM_GROUP}" if MM_GROUP else "")
+    body = {
+        "model": MM_MODEL,
+        "text": text,
+        "stream": False,
+        "language_boost": "Chinese",
+        "voice_setting": {"voice_id": MM_VOICE, "speed": 1.0, "vol": 1.0, "pitch": 0},
+        "audio_setting": {"sample_rate": 32000, "bitrate": 128000,
+                          "format": "mp3", "channel": 1},
+    }
+    req = urllib.request.Request(
+        url, data=json.dumps(body).encode("utf-8"),
+        headers={"Authorization": f"Bearer {MM_KEY}",
+                 "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except Exception as e:
+        print(f"[warn] minimax tts request failed: {e}", file=sys.stderr)
+        return False
+    audio_hex = (data.get("data") or {}).get("audio", "")
+    if data.get("base_resp", {}).get("status_code") != 0 or not audio_hex:
+        print(f"[warn] minimax tts: {str(data.get('base_resp'))[:200]}", file=sys.stderr)
+        return False
+    Path(path).write_bytes(bytes.fromhex(audio_hex))
+    return True
+
+
 def tts_generate(text, path):
-    """用 Edge TTS 把口播稿合成为 MP3（免费、无需 key）。"""
+    """口播稿合成 MP3：优先 MiniMax 克隆音色，失败回落 Edge TTS（免费无 key）。"""
+    if minimax_tts(text, path):
+        print("[info] tts via minimax clone voice", file=sys.stderr)
+        return
     import asyncio
     import edge_tts
 
     async def _run():
         await edge_tts.Communicate(text, TTS_VOICE).save(path)
     asyncio.run(_run())
+    print("[info] tts via edge-tts", file=sys.stderr)
 
 
 def tg_send_audio(path, title, caption):
@@ -429,12 +577,14 @@ def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_message(cat, items, header=None):
+def build_message(cat, items, header=None, extra=None):
     emoji, name = BOARD_META[cat]
     lines = []
     if header:
         lines.append(header + "\n")
     lines.append(f"{emoji} <b>{name}</b>\n")
+    if extra:
+        lines.append(extra)
     for n, it in enumerate(items, 1):
         title = esc(it.get("zh_title", "").strip())
         summary = esc(it.get("zh_summary", "").strip())
@@ -468,6 +618,9 @@ def main():
     date_hdr = f"🗞 <b>每日晨报 · {today.year}年{today.month}月{today.day}日</b>"
 
     candidates = collect()
+    market_rows = fetch_market()
+    market_html = market_block_html(market_rows)
+    market_txt = market_text_plain(market_rows)
     order = ["world", "finance", "crypto", "tech", "ai", "china"]
     first = True
     sent = 0
@@ -482,7 +635,8 @@ def main():
             print(f"[warn] {cat}: deepseek returned nothing, skip", file=sys.stderr)
             continue
         picked.append((cat, items))
-        msg = build_message(cat, items, header=date_hdr if first else None)
+        extra = market_html if cat == "finance" else None
+        msg = build_message(cat, items, header=date_hdr if first else None, extra=extra)
         if len(msg) > 4000:
             msg = msg[:3990] + "…"
         if tg_send(msg):
@@ -493,7 +647,7 @@ def main():
     # 额外推送：完整版新闻口播稿
     if picked:
         date_str = f"{today.year}年{today.month}月{today.day}日"
-        script = deepseek_broadcast(picked, date_str)
+        script = deepseek_broadcast(picked, date_str, market_text=market_txt)
         if script and hanzi_count(script) > 1850:  # 超字数则压缩一次
             hz0 = hanzi_count(script)
             compressed = deepseek_compress(script)
