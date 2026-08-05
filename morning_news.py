@@ -428,14 +428,15 @@ def deepseek_broadcast(picked, date_str, market_text=""):
 
         "【二、结构要求】\n"
         f"1. 开场用轻松的问候语，自然带出今天是{date_str}（日期按第一部分第4条改成口语读法），"
-        "欢迎收听每日新闻晨报。\n"
+        "欢迎收听每日新闻晨报。不要自我介绍、不要出现'我是你们的主播'之类的话。\n"
         "2. 按给定板块顺序播报，每个板块用像真人转话题那样的过渡语引入"
         "（如'先看看国际上出了什么事'、'行，钱这块儿'、'数字货币这边'、'科技圈'、"
         "'AI 那边'、'最后说说跟咱们有关的'）。\n"
         "3. 按重要性分配篇幅：重大新闻展开2-3句讲清楚，次要新闻一句带过，同类的合并着说，"
         "不重要的可以不播。来源自然融进句子里（如'路透社说'、'金融时报那边报道'）。\n"
         + market_clause +
-        "4. 段落之间空一行；结尾用生活化的一两句收尾，别用'我们明天再见'这种播音腔。\n"
+        "4. 段落之间空一行；结尾用生活化的一两句收尾，别用'我们明天再见'这种播音腔；"
+        "并把'你想了解什么新闻，欢迎告诉我。'作为全文最后一句。\n"
 
         "【三、格式禁令】\n"
         "全文严格控制在1500到1800个汉字之间（宁短勿长，绝不超过1800字）。"
@@ -507,6 +508,46 @@ def deepseek_compress(text, lo=1500, hi=1800):
     except Exception as e:
         print(f"[warn] deepseek compress: {e}", file=sys.stderr)
         return text
+
+
+def deepseek_review(text):
+    """合规审核：检查口播稿是否有违反中国法律法规/社会主义核心价值观的内容。
+    返回 (compliant: bool, issues: str, revised: str)。不合规时 revised 为中性化改写后的合规版。"""
+    sys_prompt = (
+        "你是一位专业的中文新闻内容合规审核编辑。请审核下面这篇新闻口播稿，判断是否存在"
+        "违反中华人民共和国法律法规、或不符合社会主义核心价值观的内容，例如："
+        "违反新闻宣传纪律的政治敏感或倾向性表述、对国家主权和领土完整（含台湾、香港、"
+        "西藏、新疆等）的错误表述、涉及民族宗教的不当内容、攻击国家制度或领导人、"
+        "淫秽暴力恐怖、虚假谣言、违背公序良俗等。"
+        "处理原则：在尽量保留新闻事实与信息量的前提下，把有问题的表述改写为客观、中性、"
+        "符合中国大陆表述规范的说法（例如立场性形容词改中性、敏感定性改为事实陈述）；"
+        "确实无法合规的整条可删去。"
+        "只返回 JSON：{\"compliant\": true 或 false, "
+        "\"issues\": \"简述发现的问题，没有则留空\", "
+        "\"revised\": \"合规版口播稿全文；若原文本就合规则原样返回全文\"}。"
+    )
+    payload = {
+        "model": "deepseek-chat",
+        "messages": [{"role": "system", "content": sys_prompt},
+                     {"role": "user", "content": text}],
+        "temperature": 0.2,
+        "max_tokens": 8000,
+        "response_format": {"type": "json_object"},
+        "stream": False,
+    }
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.deepseek.com/chat/completions", data=body,
+        headers={"Content-Type": "application/json",
+                 "Authorization": f"Bearer {DEEPSEEK_KEY}"})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            out = json.loads(resp.read())
+        obj = json.loads(out["choices"][0]["message"]["content"])
+        return bool(obj.get("compliant", True)), obj.get("issues", ""), obj.get("revised", "")
+    except Exception as e:
+        print(f"[warn] deepseek review: {e}", file=sys.stderr)
+        return True, "", text  # 审核失败不阻断，放行原文
 
 
 def split_for_telegram(text, limit=3800):
@@ -710,6 +751,13 @@ def main():
     if picked:
         date_str = f"{today.year}年{today.month}月{today.day}日"
         script = deepseek_broadcast(picked, date_str, market_text=market_txt)
+        if script:  # 合规审核：违反法律法规/社会主义核心价值观则中性化改写
+            compliant, issues, revised = deepseek_review(script)
+            if not compliant and revised:
+                print(f"[info] compliance: adjusted -> {issues[:120]}", file=sys.stderr)
+                script = revised
+            else:
+                print("[info] compliance: OK", file=sys.stderr)
         if script and hanzi_count(script) > 1850:  # 超字数则压缩一次
             hz0 = hanzi_count(script)
             compressed = deepseek_compress(script)
