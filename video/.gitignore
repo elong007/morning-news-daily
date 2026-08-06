@@ -1,0 +1,13 @@
+node_modules
+out
+temp
+
+# OAuth 凭据和 refresh token，绝对不能进版本库
+secrets
+
+# 每天生成的素材，不是源码（字体和片头音乐是源码，要提交）
+public/script.txt
+public/meta.json
+public/audio.mp3
+public/captions.json
+props.json

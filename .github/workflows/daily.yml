@@ -35,6 +35,9 @@ jobs:
   morning-news:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      run: ${{ steps.gate.outputs.run }}
+      target: ${{ steps.gate.outputs.target }}
     steps:
       - uses: actions/checkout@v4
 
@@ -110,3 +113,64 @@ jobs:
           git add archive
           git commit -m "归档口播稿 $(date -u -d '+8 hours' +%F)"
           git push
+
+  # 渲染字幕视频。单独一个 job：口播稿两分半就好，渲染要几十分钟，
+  # 放一起会让整个 job 长期占着 runner，也不好单独重跑。
+  video:
+    needs: morning-news
+    if: needs.morning-news.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300      # 2 核 runner 渲这条片子要多久还没实测，先给足
+    steps:
+      # 要拉到上一个 job 刚提交的 archive/，所以显式取最新的 main
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: video/package-lock.json
+
+      - name: 安装依赖
+        working-directory: video
+        run: |
+          pip install edge-tts
+          npm ci
+          # Remotion 用无头 Chrome 渲染，runner 上没有，让它自己装
+          npx remotion browser ensure
+
+      - name: 取稿 + 合成配音
+        working-directory: video
+        run: |
+          python scripts/fetch_script.py ${{ needs.morning-news.outputs.target }}
+          python scripts/tts.py
+
+      - name: 渲染
+        working-directory: video
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          npx remotion render NewsCrawl "out/news-${{ needs.morning-news.outputs.target }}.mp4" \
+            --props=props.json --log=info 2>&1 | tail -5
+          echo "渲染耗时 $(( ($(date +%s) - start) / 60 )) 分钟"
+
+      - name: 压投放版
+        working-directory: video
+        run: |
+          ffmpeg -v error -i "out/news-${{ needs.morning-news.outputs.target }}.mp4" \
+            -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p \
+            -c:a aac -b:a 128k -movflags +faststart \
+            -y "out/news-${{ needs.morning-news.outputs.target }}-web.mp4"
+          ls -lh out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: news-video-${{ needs.morning-news.outputs.target }}
+          path: video/out/*-web.mp4
+          retention-days: 14

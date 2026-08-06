@@ -1,0 +1,42 @@
+{
+  "name": "news-reel",
+  "version": "1.0.0",
+  "description": "每日晨报口播稿 -> 逐词高亮字幕竖屏视频",
+  "scripts": {
+    "dev": "remotion studio",
+    "build": "remotion bundle",
+    "upgrade": "remotion upgrade",
+    "lint": "eslint src && tsc",
+    "fetch": "python scripts/fetch_script.py",
+    "tts": "python scripts/tts.py",
+    "prepare-content": "npm run fetch && npm run tts",
+    "render": "remotion render NewsCrawl out/news-crawl.mp4 --props=props.json",
+    "render:reel": "remotion render NewsReel out/news-reel.mp4 --props=props.json",
+    "encode": "ffmpeg -i out/news-crawl.mp4 -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y out/news-crawl-web.mp4",
+    "upload": "python scripts/upload_youtube.py out/news-crawl-web.mp4"
+  },
+  "repository": {},
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@remotion/cli": "^4.0.0",
+    "@remotion/zod-types": "^4.0.0",
+    "@remotion/animation-utils": "^4.0.0",
+    "@remotion/layout-utils": "^4.0.0",
+    "@remotion/media-utils": "^4.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "remotion": "^4.0.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@remotion/eslint-config-flat": "^4.0.0",
+    "@remotion/install-whisper-cpp": "^4.0.0",
+    "@remotion/captions": "^4.0.0",
+    "@types/react": "19.2.7",
+    "@types/web": "0.0.166",
+    "eslint": "9.19.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "private": true
+}

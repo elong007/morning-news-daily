@@ -1,0 +1,245 @@
+# -*- coding: utf-8 -*-
+"""把渲好的晨报视频传到 YouTube。
+
+标题、简介、标签都从 public/meta.json 生成——简介里会列出当天六个板块的全部标题，
+这既是给观众看的目录，也是喂给 YouTube 搜索的关键词。
+
+首次使用（只需一次，必须你本人操作）：
+  1. Google Cloud Console 建项目 → 启用 "YouTube Data API v3"
+  2. 凭据 → 创建 OAuth 客户端 ID → 类型选「桌面应用」→ 下载 JSON
+  3. 把文件存成 secrets/client_secret.json
+  4. OAuth 同意屏幕里把自己的 Google 账号加进「测试用户」
+  5. 跑一次 `python scripts/upload_youtube.py --auth-only`，
+     浏览器会打开让你授权，成功后 refresh token 存进 secrets/token.json，之后就免登录了
+
+日常：
+  python scripts/upload_youtube.py out/xxx.mp4                # 默认传成 private
+  python scripts/upload_youtube.py out/xxx.mp4 --privacy unlisted
+  python scripts/upload_youtube.py out/xxx.mp4 --privacy public
+
+注意：Google 的项目在通过 API 合规审核前，用 API 上传的视频会被强制锁成 private，
+在后台手动改公开即可；要长期直接发公开，得去申请 audit。上传一条消耗 1600 单位配额，
+默认每天 10000 单位，也就是一天最多 6 条。
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+from google.auth.exceptions import RefreshError
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
+
+ROOT = Path(__file__).resolve().parent.parent
+SECRETS = ROOT / "secrets"
+CLIENT_SECRET = SECRETS / "client_secret.json"
+TOKEN = SECRETS / "token.json"
+META = ROOT / "public" / "meta.json"
+
+MANUAL = False  # 由 --manual 置位
+
+SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    # 只为了授权后能读出频道名，确认授的是对的那个号。
+    # 光有 upload 权限是查不了 channels.list(mine=True) 的。
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
+# 22 = People & Blogs，25 = News & Politics
+CATEGORY_ID = "25"
+
+
+def get_credentials():
+    creds = None
+    if TOKEN.exists():
+        creds = Credentials.from_authorized_user_file(str(TOKEN), SCOPES)
+
+    if creds and creds.valid:
+        return creds
+
+    if creds and creds.expired and creds.refresh_token:
+        try:
+            creds.refresh(Request())
+        except RefreshError as e:
+            sys.exit(
+                f"[error] token 已失效：{e}\n"
+                "        最常见的原因：OAuth 同意屏幕的发布状态还停在「测试」——\n"
+                "        测试状态签发的 refresh token 只有 7 天寿命。\n"
+                "        去 Google Auth Platform 把状态改成「生产」，然后：\n"
+                f"          del {TOKEN}\n"
+                "          python scripts/upload_youtube.py --auth-only"
+            )
+    else:
+        if not CLIENT_SECRET.exists():
+            sys.exit(
+                f"[error] 缺少 {CLIENT_SECRET}\n"
+                "        去 Google Cloud Console 建「桌面应用」类型的 OAuth 客户端 ID，"
+                "下载 JSON 放到这个路径（详见本文件顶部注释）"
+            )
+        flow = InstalledAppFlow.from_client_secrets_file(str(CLIENT_SECRET), SCOPES)
+        # 会在本机起一个临时服务器接 OAuth 回调，并打开浏览器让你点同意。
+        # manual=True 时不自动开浏览器，只把 URL 打出来——浏览器同时登着多个 Google 账号时，
+        # Google 自己拼的切号跳转会丢参数、报泛化 400，贴进无痕窗口就能绕开。
+        if MANUAL:
+            print(
+                "\n把下面这个链接贴进【无痕窗口】，并且只登录你要发片的那个账号：\n",
+                file=sys.stderr,
+            )
+            creds = flow.run_local_server(port=0, open_browser=False)
+        else:
+            creds = flow.run_local_server(port=0)
+
+    SECRETS.mkdir(exist_ok=True)
+    TOKEN.write_text(creds.to_json(), encoding="utf-8")
+    return creds
+
+
+def show_channel(creds):
+    """打印授权到的频道，确认没授错号（多个 Google 账号 / 品牌账号时很容易搞错）。"""
+    try:
+        youtube = build("youtube", "v3", credentials=creds)
+        items = youtube.channels().list(part="snippet", mine=True).execute().get("items", [])
+    except HttpError as e:
+        print(f"[warn] 读不到频道信息：{e}", file=sys.stderr)
+        return
+    if not items:
+        print(
+            "[warn] 这个账号名下没有 YouTube 频道，上传会失败。"
+            "先去 youtube.com 建一个频道，或者换个账号重新授权"
+            f"（删掉 {TOKEN} 再跑一次）",
+            file=sys.stderr,
+        )
+        return
+    ch = items[0]
+    print(
+        f"[info] 视频会传到频道：{ch['snippet']['title']}（{ch['id']}）\n"
+        f"       不是想要的频道就删掉 {TOKEN}，重新授权时选对账号",
+        file=sys.stderr,
+    )
+
+
+def build_metadata():
+    """标题/简介/标签都由当天的 meta.json 生成。"""
+    if not META.exists():
+        sys.exit(f"[error] 缺少 {META}，先跑 npm run fetch")
+    meta = json.loads(META.read_text(encoding="utf-8"))
+
+    date_str = meta.get("dateStr", "")
+    boards = meta.get("boards", [])
+
+    title = f"每日晨报 · {date_str}｜国际 财经 科技 AI 全球要闻速览"
+
+    lines = [
+        f"{date_str} 全球要闻速览。",
+        "",
+        "内容取自 NYT / Guardian / WSJ / BBC / Reuters / Economist / Bloomberg 等西方主流媒体当日报道，"
+        "经 AI 筛选、翻译、整理成中文播报。",
+        "",
+        "—— 本期目录 ——",
+    ]
+    for board in boards:
+        lines.append("")
+        lines.append(f"【{board.get('emoji', '')} {board.get('name', '')}】")
+        for headline in board.get("headlines", []):
+            lines.append(f"· {headline}")
+    lines += [
+        "",
+        "每天早上更新。",
+        "",
+        "#每日晨报 #国际新闻 #财经 #科技 #AI",
+    ]
+    description = "\n".join(lines)
+    # YouTube 简介上限 5000 字符
+    if len(description) > 4900:
+        description = description[:4900] + "\n…"
+
+    tags = ["每日晨报", "国际新闻", "财经新闻", "科技新闻", "AI", "新闻速览", "早报"]
+    tags += [b.get("name", "") for b in boards if b.get("name")]
+
+    return title, description, tags
+
+
+def upload(video_path: Path, privacy: str):
+    title, description, tags = build_metadata()
+
+    print(f"[info] 标题：{title}", file=sys.stderr)
+    print(f"[info] 简介 {len(description)} 字符，{len(tags)} 个标签", file=sys.stderr)
+    print(f"[info] 隐私：{privacy}", file=sys.stderr)
+    print(f"[info] 文件：{video_path} ({video_path.stat().st_size / 1e6:.0f} MB)", file=sys.stderr)
+
+    youtube = build("youtube", "v3", credentials=get_credentials())
+    body = {
+        "snippet": {
+            "title": title,
+            "description": description,
+            "tags": tags,
+            "categoryId": CATEGORY_ID,
+            "defaultLanguage": "zh-CN",
+            "defaultAudioLanguage": "zh-CN",
+        },
+        "status": {
+            "privacyStatus": privacy,
+            "selfDeclaredMadeForKids": False,
+        },
+    }
+
+    # 分块续传：大文件断了能接着传
+    media = MediaFileUpload(str(video_path), chunksize=8 * 1024 * 1024, resumable=True)
+    request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+
+    response = None
+    while response is None:
+        try:
+            status, response = request.next_chunk()
+        except HttpError as e:
+            sys.exit(f"[error] 上传失败：{e}")
+        if status:
+            print(f"[info] 已上传 {int(status.progress() * 100)}%", file=sys.stderr)
+
+    video_id = response["id"]
+    print(f"[done] https://youtu.be/{video_id}", file=sys.stderr)
+    return video_id
+
+
+def main():
+    parser = argparse.ArgumentParser(description="上传晨报视频到 YouTube")
+    parser.add_argument("video", nargs="?", help="视频文件路径")
+    parser.add_argument(
+        "--privacy",
+        default="private",
+        choices=["private", "unlisted", "public"],
+        help="默认 private，确认没问题再改",
+    )
+    parser.add_argument(
+        "--auth-only", action="store_true", help="只走一次授权，拿到 token 就退出"
+    )
+    parser.add_argument(
+        "--manual",
+        action="store_true",
+        help="不自动开浏览器，只打印授权链接，方便贴进无痕窗口（多账号登录时用）",
+    )
+    args = parser.parse_args()
+
+    global MANUAL
+    MANUAL = args.manual
+
+    if args.auth_only:
+        creds = get_credentials()
+        print(f"[done] 授权成功，token 已存到 {TOKEN}", file=sys.stderr)
+        show_channel(creds)
+        return
+
+    if not args.video:
+        parser.error("要传的视频路径没给")
+    video_path = Path(args.video)
+    if not video_path.exists():
+        sys.exit(f"[error] 找不到 {video_path}")
+
+    upload(video_path, args.privacy)
+
+
+if __name__ == "__main__":
+    main()
