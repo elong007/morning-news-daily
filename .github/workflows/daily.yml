@@ -37,6 +37,10 @@ jobs:
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           MINIMAX_GROUP_ID: ${{ secrets.MINIMAX_GROUP_ID }}
           MINIMAX_VOICE_ID: ${{ secrets.MINIMAX_VOICE_ID }}
+          # 口播音色和语速。想换声音去 Settings → Secrets and variables → Actions
+          # → Variables 里改 TTS_VOICE / TTS_RATE，不用动代码。没设就用这里的默认值。
+          TTS_VOICE: ${{ vars.TTS_VOICE || 'zh-CN-YunjianNeural' }}
+          TTS_RATE: ${{ vars.TTS_RATE || '+8%' }}
           DRY_RUN: ${{ inputs.dry_run && '1' || '0' }}
         run: python morning_news.py
 

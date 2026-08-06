@@ -31,10 +31,15 @@ DEEPSEEK_KEY = os.environ["DEEPSEEK_API_KEY"]
 DRY_RUN = os.environ.get("DRY_RUN", "") == "1"
 TG_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "") if DRY_RUN else os.environ["TELEGRAM_BOT_TOKEN"]
 TG_CHAT = os.environ.get("TELEGRAM_CHAT_ID", "0") if DRY_RUN else os.environ["TELEGRAM_CHAT_ID"]
-# 口播稿转音频用的语音；可用 TTS_VOICE 环境变量覆盖。常用中文：
-# zh-CN-XiaoyiNeural(女·轻快活泼)  zh-CN-XiaoxiaoNeural(女·温暖自然)
-# zh-CN-YunxiNeural(男·轻松活泼)  zh-CN-YunjianNeural(男·新闻腔)
-TTS_VOICE = os.environ.get("TTS_VOICE", "zh-CN-XiaoyiNeural")
+# 口播稿转音频用的语音和语速。改法：仓库 Settings → Secrets and variables →
+# Actions → Variables 里加 TTS_VOICE / TTS_RATE，不用改代码也不用重新 commit。常用中文音色：
+# zh-CN-YunjianNeural(男·新闻腔，默认)  zh-CN-YunxiNeural(男·轻松活泼)
+# zh-CN-XiaoyiNeural(女·轻快活泼)      zh-CN-XiaoxiaoNeural(女·温暖自然)
+# 用 `or` 而不是 get 的默认值：workflow 里 vars 没设时传进来的是空字符串，
+# 那种情况下 get 会返回 ""，拿空音色去调 edge-tts 会直接报错。
+TTS_VOICE = os.environ.get("TTS_VOICE") or "zh-CN-YunjianNeural"
+# 语速，如 "+8%" / "-5%" / "+0%"
+TTS_RATE = os.environ.get("TTS_RATE") or "+0%"
 # MiniMax 克隆音色（三项配齐才启用，缺任一项就走 Edge TTS）
 MM_KEY = os.environ.get("MINIMAX_API_KEY", "")
 MM_GROUP = os.environ.get("MINIMAX_GROUP_ID", "")
@@ -420,9 +425,10 @@ def deepseek_broadcast(picked, date_str, market_text=""):
         "改用口语说法：不过、结果、而且、说白了、也就是说、这事儿、问题在于、有意思的是、简单讲。\n"
         "3. 先给结论再补背景。不要写'在通胀持续走高的背景下，美联储宣布了加息'，"
         "要写'美联储又加息了。原因是通胀一直下不来。'\n"
-        "4. 所有数字、百分比、金额、日期都写成中文口语读法，不要出现阿拉伯数字和%符号："
-        "'3.5%'写成'百分之三点五'，'1.2万亿美元'写成'一点二万亿美元'，"
-        "'下跌2%'写成'跌了百分之二'，'8月5日'写成'八月五号'。\n"
+        "4. 数字按标准中文出版用法：确切的数值用阿拉伯数字——日期（2026年8月6日）、"
+        "百分比（3.5%、下跌2%）、精确数量（28人）、指数点位（3878.43点）都用阿拉伯数字和%符号；"
+        "金额用阿拉伯数字加中文单位（1.2万亿美元、64000美元、7.2元），不要用$￥这类货币符号；"
+        "只有概数和习惯用语才用中文（如'一两句''十几年''好几个''成千上万''三三两两'）。\n"
         "5. 生僻的英文缩写和外文机构名翻成中文说法；AI、GDP、iPhone 这类已经进入日常口语的可以保留。\n"
         "6. 允许少量自然口气词（那么、咱们、你看、嗯），但全篇不超过八处，多了就腻。\n"
         "7. 不要排比句、不要对仗、不要成语堆砌——这些一念出来就是念稿子的味道。\n"
@@ -430,7 +436,7 @@ def deepseek_broadcast(picked, date_str, market_text=""):
 
         "【二、结构要求】\n"
         "1. 全文第一句先念广告语'将世界讲给你听。'（单独成句，一字不改）；"
-        f"紧接着用轻松的问候语，自然带出今天是{date_str}（日期按第一部分第4条改成口语读法），"
+        f"紧接着用轻松的问候语，自然带出今天是{date_str}（日期就用这种阿拉伯数字写法），"
         "欢迎收听每日新闻晨报。不要自我介绍、不要出现'我是你们的主播'之类的话。\n"
         "2. 按给定板块顺序播报，每个板块用像真人转话题那样的过渡语引入"
         "（如'先看看国际上出了什么事'、'行，钱这块儿'、'数字货币这边'、'科技圈'、"
@@ -443,8 +449,9 @@ def deepseek_broadcast(picked, date_str, market_text=""):
 
         "【三、格式禁令】\n"
         "篇幅按新闻的数量和重要性灵活把握，重要的多讲、次要的少讲，不设字数上限。"
-        "口播稿正文里绝对不要出现编号、网址链接、Markdown符号（*#等）、括号备注、阿拉伯数字、英文标点，"
-        "只用中文全角标点（此禁令针对 script 正文，不针对下面的 JSON 结构本身）。\n"
+        "口播稿正文里不要出现编号、网址链接、Markdown符号（*#等）、括号备注；"
+        "除阿拉伯数字和百分号外，其余标点一律用中文全角，不要英文标点"
+        "（此禁令针对 script 正文，不针对下面的 JSON 结构本身）。\n"
 
         "【四、输出格式】\n"
         "只返回一个 JSON 对象，不要代码块标记、不要多余说明：\n"
@@ -635,9 +642,9 @@ def tts_generate(text, path):
     import edge_tts
 
     async def _run():
-        await edge_tts.Communicate(text, TTS_VOICE).save(path)
+        await edge_tts.Communicate(text, TTS_VOICE, rate=TTS_RATE).save(path)
     asyncio.run(_run())
-    print("[info] tts via edge-tts", file=sys.stderr)
+    print(f"[info] tts via edge-tts, voice={TTS_VOICE} rate={TTS_RATE}", file=sys.stderr)
 
 
 def tg_send_audio(path, title, caption):
