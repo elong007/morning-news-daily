@@ -34,7 +34,9 @@ concurrency:
 jobs:
   morning-news:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 排队等 runner 的时间也算进 timeout。仓库转公开后用的是免费 runner 池，
+    # 实测排队能到 16 分钟以上，原来的 15 分钟会让 job 还没拿到机器就被自己超时掉。
+    timeout-minutes: 60
     outputs:
       run: ${{ steps.gate.outputs.run }}
       target: ${{ steps.gate.outputs.target }}
