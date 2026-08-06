@@ -2,8 +2,15 @@ name: 每日晨报
 
 on:
   schedule:
-    # UTC 00:00 = 北京时间 08:00。GitHub 定时任务高峰期可能延迟若干分钟。
-    - cron: "0 0 * * *"
+    # 美股 16:00 ET 收市，行情数据必须等收市才有意义，所以放在收市之后跑。
+    # ET 有夏令时，GitHub 的 cron 不认时区，所以两条都挂上，靠下面的"太早就退出"
+    # 和"今天已经跑过就退出"两道判断保证每天只成功一次。
+    #   夏令时(EDT, 3月-11月): 16:00 ET = 20:00 UTC
+    #   冬令时(EST, 11月-3月): 16:00 ET = 21:00 UTC
+    # 用 :25 这种冷门分钟而不是整点——整点尤其是 0:00 是全球最拥挤的 cron 槽位，
+    # 之前挂在 "0 0 * * *" 实测延迟稳定在 3 小时以上。
+    - cron: "25 20 * * *"
+    - cron: "25 21 * * *"
   workflow_dispatch:        # 允许手动触发（测试用）
     inputs:
       dry_run:
@@ -13,6 +20,12 @@ on:
 
 permissions:
   contents: write           # 需要把 archive/ 回写仓库
+
+# 万一 GitHub 把某条 cron 延迟到和下一条重叠，串行执行，
+# 后一条才能看见前一条提交的 archive 从而正确跳过。
+concurrency:
+  group: morning-news
+  cancel-in-progress: false
 
 jobs:
   morning-news:
@@ -25,10 +38,43 @@ jobs:
         with:
           python-version: "3.11"
 
+      # 两条 cron（冬/夏令时各一条）每天都会触发，但只有落在收市之后的那条该干活。
+      # 再加一道"今天已经归档过就跳过"，防止重复生成和重复上传。
+      - name: 判断该不该跑
+        id: gate
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from datetime import datetime, timedelta, timezone
+          from zoneinfo import ZoneInfo
+
+          now_utc = datetime.now(timezone.utc)
+          et = now_utc.astimezone(ZoneInfo("America/New_York"))
+          # 口播稿用北京日期命名，和 morning_news.py 保持一致
+          target = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d")
+
+          reason = ""
+          if os.path.exists(f"archive/{target}.txt"):
+              reason = f"{target} 已经归档过"
+          elif et.hour < 16 or (et.hour == 16 and et.minute < 10):
+              reason = f"美东现在 {et:%H:%M}，还没到收市后十分钟"
+
+          print(f"target={target}")
+          print(f"run={'false' if reason else 'true'}")
+          print(f"reason={reason}")
+          PY
+          echo "美东时间: $(TZ=America/New_York date '+%F %H:%M')"
+
+      - name: 跳过说明
+        if: steps.gate.outputs.run != 'true'
+        run: echo "跳过本次：${{ steps.gate.outputs.reason }}"
+
       - name: 安装依赖
+        if: steps.gate.outputs.run == 'true'
         run: pip install edge-tts requests
 
       - name: 生成并推送晨报
+        if: steps.gate.outputs.run == 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -45,6 +91,7 @@ jobs:
         run: python morning_news.py
 
       - name: 归档口播稿
+        if: steps.gate.outputs.run == 'true'
         run: |
           if [ -z "$(git status --porcelain archive)" ]; then
             echo "archive 无变化，跳过提交"

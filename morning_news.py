@@ -302,6 +302,34 @@ def _coingecko():
         return {}
 
 
+def us_market_closed():
+    """判断美股今天是否休市（周末 / 假日）。返回 (closed, 最近交易日 'YYYY-MM-DD')。
+
+    做法：读纳斯达克行情元数据里的 regularMarketTime，换算成交易所当地日期，
+    和交易所当地的"今天"比。不一致就说明今天没开过盘。
+    用响应里自带的 gmtoffset 换算，所以不需要时区数据库，夏令时也自动正确。
+
+    注意：Yahoo 会按 IP 封禁，本机调用一律 403，只能在 Actions 里验证。
+    """
+    data = http_get("https://query1.finance.yahoo.com/v8/finance/chart/"
+                    "%5EIXIC?interval=1d&range=1d")
+    if not data:
+        return False, ""
+    try:
+        m = json.loads(data)["chart"]["result"][0]["meta"]
+        last = m.get("regularMarketTime")
+        offset = m.get("gmtoffset")
+        if not last or offset is None:
+            return False, ""
+        delta = timedelta(seconds=offset)
+        ex_today = (datetime.now(timezone.utc) + delta).date()
+        ex_last = (datetime.fromtimestamp(last, timezone.utc) + delta).date()
+        return ex_last != ex_today, ex_last.isoformat()
+    except Exception as e:
+        print(f"[warn] us market session: {e}", file=sys.stderr)
+        return False, ""
+
+
 def fetch_market():
     """返回 [(label, price, chg_pct, kind), ...]，kind ∈ point/fx/crypto。"""
     rows = []
@@ -335,10 +363,16 @@ def market_block_html(rows):
     return "\n".join(lines)
 
 
-def market_text_plain(rows):
+def market_text_plain(rows, us_closed=False, last_session=""):
     if not rows:
         return ""
     segs = []
+    if us_closed:
+        # 放在最前面，主播必须先说清楚"美股今天没开"，否则听众会以为这是当日盘中数据
+        note = "美股今日休市"
+        if last_session:
+            note += f"，以下美股数据为{last_session}收盘"
+        segs.append(note)
     for label, price, chg, kind in rows:
         val = _fmt_price(price, kind).replace("$", "")
         seg = f"{label}{val}"
@@ -412,6 +446,8 @@ def deepseek_broadcast(picked, date_str, market_text=""):
     market_clause = (
         "在财经板块，先用一两句自然口语化地播报下面提供的'今日市场行情'——"
         "依次带出各指数点位与涨跌幅、美元兑人民币汇率、比特币与以太币价格，数字必须准确、不要编造；"
+        "如果行情数据开头写了'美股今日休市'，必须先把这句说出来（比如'美股今天休市'），"
+        "再播其余数字，不许略过；"
         if market_text else "")
     sys_prompt = (
         "你是一位在电台做早间新闻的主播，正在给自己写今天上节目要念的稿子。"
@@ -746,8 +782,11 @@ def main():
 
     candidates = collect()
     market_rows = fetch_market()
+    us_closed, last_session = us_market_closed()
+    print(f"[info] us market closed today: {us_closed} (last session {last_session})",
+          file=sys.stderr)
     market_html = market_block_html(market_rows)
-    market_txt = market_text_plain(market_rows)
+    market_txt = market_text_plain(market_rows, us_closed, last_session)
     order = ["world", "finance", "crypto", "tech", "ai", "china"]
     first = True
     sent = 0
