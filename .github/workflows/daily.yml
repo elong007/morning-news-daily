@@ -17,6 +17,10 @@ on:
         description: "只生成口播稿并归档，不推 Telegram（重跑不刷屏）"
         type: boolean
         default: false
+      force:
+        description: "无视时间和去重判断强制跑一次（改了提示词想立刻验证时用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write           # 需要把 archive/ 回写仓库
@@ -42,6 +46,8 @@ jobs:
       # 再加一道"今天已经归档过就跳过"，防止重复生成和重复上传。
       - name: 判断该不该跑
         id: gate
+        env:
+          FORCE: ${{ inputs.force && '1' || '0' }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
@@ -54,7 +60,9 @@ jobs:
           target = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d")
 
           reason = ""
-          if os.path.exists(f"archive/{target}.txt"):
+          if os.environ.get("FORCE") == "1":
+              pass  # 手动强制，跳过所有判断
+          elif os.path.exists(f"archive/{target}.txt"):
               reason = f"{target} 已经归档过"
           elif et.hour < 16 or (et.hour == 16 and et.minute < 10):
               reason = f"美东现在 {et:%H:%M}，还没到收市后十分钟"
