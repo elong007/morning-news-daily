@@ -130,7 +130,7 @@ def build_metadata():
     date_str = meta.get("dateStr", "")
     boards = meta.get("boards", [])
 
-    title = f"每日晨报 · {date_str}｜国际 财经 科技 AI 全球要闻速览"
+    title = f"世界要闻 · {date_str}｜国际 财经 科技 AI 全球要闻速览"
 
     lines = [
         f"{date_str} 全球要闻速览。",
@@ -149,14 +149,14 @@ def build_metadata():
         "",
         "每天早上更新。",
         "",
-        "#每日晨报 #国际新闻 #财经 #科技 #AI",
+        "#世界要闻 #国际新闻 #财经 #科技 #AI",
     ]
     description = "\n".join(lines)
     # YouTube 简介上限 5000 字符
     if len(description) > 4900:
         description = description[:4900] + "\n…"
 
-    tags = ["每日晨报", "国际新闻", "财经新闻", "科技新闻", "AI", "新闻速览", "早报"]
+    tags = ["世界要闻", "国际新闻", "财经新闻", "科技新闻", "AI", "新闻速览", "早报"]
     tags += [b.get("name", "") for b in boards if b.get("name")]
 
     return title, description, tags

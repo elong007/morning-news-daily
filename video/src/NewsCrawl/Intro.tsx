@@ -78,7 +78,7 @@ export const Intro: React.FC<{ readonly dateStr: string }> = ({ dateStr }) => {
             WebkitTextFillColor: "transparent",
           }}
         >
-          每日晨报
+          世界要闻
         </div>
         <div
           style={{
@@ -99,7 +99,7 @@ export const Intro: React.FC<{ readonly dateStr: string }> = ({ dateStr }) => {
             color: "rgba(242,193,75,0.6)",
           }}
         >
-          MORNING BRIEF
+          WORLD NEWS
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

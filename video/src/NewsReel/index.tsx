@@ -73,7 +73,7 @@ const Header: React.FC<{ readonly dateStr: string }> = ({ dateStr }) => (
         }}
       />
       <span style={{ fontSize: 38, fontWeight: 900, color: "white", letterSpacing: 2 }}>
-        每日晨报
+        世界要闻
       </span>
       <span style={{ fontSize: 32, fontWeight: 500, color: "rgba(255,255,255,0.66)" }}>
         {dateStr}

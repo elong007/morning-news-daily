@@ -39,7 +39,7 @@ export const Outro: React.FC<{ readonly dateStr: string }> = ({ dateStr }) => {
           WebkitTextFillColor: "transparent",
         }}
       >
-        每日晨报
+        世界要闻
       </div>
       <div
         style={{

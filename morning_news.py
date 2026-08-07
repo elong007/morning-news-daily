@@ -474,7 +474,7 @@ def deepseek_broadcast(picked, date_str, market_text=""):
         "1. 开头三句是固定格式，必须一字不改、按这个顺序、各自单独成句：\n"
         "   第一句：'将世界讲给你听。'\n"
         f"   第二句：'今天是{date_str}。'\n"
-        "   第三句：'大家好，欢迎收听每日新闻晨报。'\n"
+        "   第三句：'大家好，欢迎收听世界要闻。'\n"
         "   问候语一律用'大家好'。不许用'早上好''早安''各位听众早上好'这类跟时段绑定的说法——"
         "节目什么时候被听到不一定。也不要自我介绍、不要出现'我是你们的主播'之类的话。"
         "不许把日期挪到问候语里面去，也不许改写成别的说法。\n"
@@ -545,7 +545,7 @@ def deepseek_compress(text, lo=1500, hi=1800):
         "（宁短勿长）。保留轻松亲切的口吻、板块过渡和结尾；优先压缩次要新闻、"
         "合并同类内容，重要新闻保留；财经板块的行情数字（指数点位、涨跌幅、汇率、币价）必须保留。"
         "【关键】开头三句原样保留、一字不改：'将世界讲给你听。'、'今天是……。'、"
-        "'大家好，欢迎收听每日新闻晨报。'，不许删改，也不许把'大家好'改成'早上好'。"
+        "'大家好，欢迎收听世界要闻。'，不许删改，也不许把'大家好'改成'早上好'。"
         "压缩时不许把口语改回书面语：句子仍要短（每句不超过25字），"
         "不许用'值得注意的是、与此同时、此外、据悉、随着、在……背景下'这类词。"
         "数字沿用原文写法：确切数值保持阿拉伯数字（2026年8月6日、3.5%、3878.43点、1.2万亿美元），"
@@ -699,7 +699,7 @@ def tg_send_audio(path, title, caption):
         r = requests.post(
             f"https://api.telegram.org/bot{TG_TOKEN}/sendAudio",
             data={"chat_id": TG_CHAT, "title": title,
-                  "performer": "每日晨报", "caption": caption},
+                  "performer": "世界要闻", "caption": caption},
             files={"audio": ("morning_brief.mp3", f, "audio/mpeg")},
             timeout=180,
         )
@@ -785,7 +785,7 @@ def write_archive(script, picked, date_str, today, section_starts=None):
 
 def main():
     today = datetime.now(timezone.utc) + timedelta(hours=8)  # 北京时间
-    date_hdr = f"🗞 <b>每日晨报 · {today.year}年{today.month}月{today.day}日</b>"
+    date_hdr = f"🗞 <b>世界要闻 · {today.year}年{today.month}月{today.day}日</b>"
 
     candidates = collect()
     market_rows = fetch_market()
@@ -847,8 +847,8 @@ def main():
             try:
                 audio_path = "morning_brief.mp3"
                 tts_generate(script, audio_path)
-                cap = f"📻 每日新闻晨报 · {date_str} · 语音版"
-                if tg_send_audio(audio_path, f"每日新闻晨报 {date_str}", cap):
+                cap = f"📻 世界要闻 · {date_str} · 语音版"
+                if tg_send_audio(audio_path, f"世界要闻 {date_str}", cap):
                     sent += 1
                     print("[info] audio sent", file=sys.stderr)
             except Exception as e:
