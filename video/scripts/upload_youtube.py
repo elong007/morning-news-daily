@@ -201,7 +201,30 @@ def upload(video_path: Path, privacy: str):
 
     video_id = response["id"]
     print(f"[done] https://youtu.be/{video_id}", file=sys.stderr)
-    return video_id
+
+    # 回读校验：实测发现 YouTube 不一定采纳请求里的 privacyStatus
+    # （2026-08-07 明确请求 private，落地却是 public）。
+    # 不校验的话，接进自动流水线就是每天的片子直接公开、没有审核窗口。
+    actual = response.get("status", {}).get("privacyStatus")
+    try:
+        got = youtube.videos().list(part="status", id=video_id).execute()["items"][0]
+        actual = got["status"]["privacyStatus"]
+    except (HttpError, IndexError, KeyError) as e:
+        print(f"[warn] 回读隐私状态失败：{e}", file=sys.stderr)
+
+    if actual != privacy:
+        print(
+            f"\n[error] 隐私状态不符！请求 {privacy}，实际 {actual}。\n"
+            f"        视频已经以 {actual} 状态挂在频道上了。\n"
+            f"        upload 权限改不了已有视频，只能去 YouTube Studio 手动改：\n"
+            f"        https://studio.youtube.com/video/{video_id}/edit\n"
+            f"        另外查一下 Studio → 设置 → 上传默认设置 → 可见性。",
+            file=sys.stderr,
+        )
+        return video_id, False
+
+    print(f"[info] 隐私状态已确认：{actual}", file=sys.stderr)
+    return video_id, True
 
 
 def main():
@@ -238,7 +261,10 @@ def main():
     if not video_path.exists():
         sys.exit(f"[error] 找不到 {video_path}")
 
-    upload(video_path, args.privacy)
+    _, privacy_ok = upload(video_path, args.privacy)
+    # 隐私状态不符要让调用方知道——CI 里这一步失败会触发 Telegram 告警
+    if not privacy_ok:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
