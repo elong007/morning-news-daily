@@ -21,6 +21,10 @@ on:
         description: "无视时间和去重判断强制跑一次（改了提示词想立刻验证时用）"
         type: boolean
         default: false
+      video_only:
+        description: "只重渲视频，不重新生成口播稿、不推 Telegram（调视频时用）"
+        type: boolean
+        default: false
 
 permissions:
   contents: write           # 需要把 archive/ 回写仓库
@@ -53,6 +57,7 @@ jobs:
         id: gate
         env:
           FORCE: ${{ inputs.force && '1' || '0' }}
+          VIDEO_ONLY: ${{ inputs.video_only && '1' || '0' }}
         run: |
           python - <<'PY' >> "$GITHUB_OUTPUT"
           import os
@@ -65,7 +70,9 @@ jobs:
           target = (now_utc + timedelta(hours=8)).strftime("%Y-%m-%d")
 
           reason = ""
-          if os.environ.get("FORCE") == "1":
+          if os.environ.get("VIDEO_ONLY") == "1":
+              pass  # 只重渲视频，用已经归档好的稿子
+          elif os.environ.get("FORCE") == "1":
               pass  # 手动强制，跳过所有判断
           elif os.path.exists(f"archive/{target}.txt"):
               reason = f"{target} 已经归档过"
@@ -83,11 +90,11 @@ jobs:
         run: echo "跳过本次：${{ steps.gate.outputs.reason }}"
 
       - name: 安装依赖
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && !inputs.video_only
         run: pip install edge-tts requests
 
       - name: 生成并推送晨报
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && !inputs.video_only
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -104,7 +111,7 @@ jobs:
         run: python morning_news.py
 
       - name: 归档口播稿
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && !inputs.video_only
         run: |
           if [ -z "$(git status --porcelain archive)" ]; then
             echo "archive 无变化，跳过提交"
@@ -122,7 +129,9 @@ jobs:
     needs: morning-news
     if: needs.morning-news.outputs.run == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 300      # 2 核 runner 渲这条片子要多久还没实测，先给足
+    # 实测：2 核 runner 渲 13798 帧（7.7 分钟成片）用了 26 分钟，约 8.8 帧/秒。
+    # 留足余量应付更长的稿子和排队。
+    timeout-minutes: 120
     steps:
       # 要拉到上一个 job 刚提交的 archive/，所以显式取最新的 main
       - uses: actions/checkout@v4
@@ -158,21 +167,15 @@ jobs:
         run: |
           set -o pipefail
           start=$(date +%s)
-          npx remotion render NewsCrawl "out/news-${{ needs.morning-news.outputs.target }}.mp4" \
-            --props=props.json --log=info 2>&1 | tail -5
+          # 直接渲成投放质量。Remotion 默认 CRF 18 近无损，6 分钟片子 350MB；
+          # 这里直接给 23，省掉一次转码——runner 镜像本来也不带 ffmpeg。
+          OUT="out/news-${{ needs.morning-news.outputs.target }}.mp4"
+          npx remotion render NewsCrawl "$OUT" --props=props.json --crf 23 --log=info 2>&1 | tail -3
           echo "渲染耗时 $(( ($(date +%s) - start) / 60 )) 分钟"
-
-      - name: 压投放版
-        working-directory: video
-        run: |
-          ffmpeg -v error -i "out/news-${{ needs.morning-news.outputs.target }}.mp4" \
-            -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p \
-            -c:a aac -b:a 128k -movflags +faststart \
-            -y "out/news-${{ needs.morning-news.outputs.target }}-web.mp4"
           ls -lh out/
 
       - uses: actions/upload-artifact@v4
         with:
           name: news-video-${{ needs.morning-news.outputs.target }}
-          path: video/out/*-web.mp4
+          path: video/out/*.mp4
           retention-days: 14
