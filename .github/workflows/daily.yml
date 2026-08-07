@@ -185,6 +185,24 @@ jobs:
           path: video/out/*.mp4
           retention-days: 14
 
+      # 上传到 YouTube。凭据只有 upload + readonly 两个权限，且绑定在专用频道
+      # 「世界要闻」上——传不到主频道，也改不了任何已有视频。
+      - name: 上传 YouTube
+        working-directory: video
+        env:
+          YT_CLIENT_SECRET: ${{ secrets.YT_CLIENT_SECRET }}
+          YT_TOKEN: ${{ secrets.YT_TOKEN }}
+        run: |
+          if [ -z "$YT_CLIENT_SECRET" ] || [ -z "$YT_TOKEN" ]; then
+            echo "::warning::没配 YT_CLIENT_SECRET / YT_TOKEN，跳过上传"
+            exit 0
+          fi
+          pip install google-api-python-client google-auth-oauthlib google-auth-httplib2
+          mkdir -p secrets
+          printf '%s' "$YT_CLIENT_SECRET" > secrets/client_secret.json
+          printf '%s' "$YT_TOKEN" > secrets/token.json
+          python scripts/upload_youtube.py "out/news-${{ needs.morning-news.outputs.target }}.mp4" --privacy public
+
   # 出问题时主动告警。原先任何一步挂掉都是静默的——
   # 你只有第二天没收到晨报才会发现，还得自己去 Actions 里翻日志。
   notify:

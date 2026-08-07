@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 每日全自动：拉稿 → 配音 → 渲染 → 压缩 → 上传 YouTube
 #
-# 手动跑：  bash scripts/daily.sh
-# 上传公开：bash scripts/daily.sh public
+# 手动跑：  bash scripts/daily.sh          （直接公开）
+# 先不公开：bash scripts/daily.sh unlisted
 #
 # 挂 Windows 计划任务（每天 12:30）：
 # 云端 cron 写的是 00:00 UTC（北京 08:00），但 GitHub 对定时任务的延迟稳定在 3~3.5 小时，
@@ -11,12 +11,11 @@
 #   参数:   -lc "cd /c/Users/dujob/news-reel && bash scripts/daily.sh >> out/daily.log 2>&1"
 #   勾上「错过计划开始时间后尽快启动任务」，关机错过的那天开机后会自动补上。
 #
-# 默认传成 private，确认没问题再手动改公开——别让没人看过的片子直接上线。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PRIVACY="${1:-private}"
+PRIVACY="${1:-public}"
 TODAY="$(date +%F)"
 MASTER="out/morning-news-crawl-${TODAY}.mp4"
 WEB="out/morning-news-crawl-${TODAY}-web.mp4"

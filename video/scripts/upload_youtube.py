@@ -13,13 +13,14 @@
      浏览器会打开让你授权，成功后 refresh token 存进 secrets/token.json，之后就免登录了
 
 日常：
-  python scripts/upload_youtube.py out/xxx.mp4                # 默认传成 private
+  python scripts/upload_youtube.py out/xxx.mp4                # 默认直接公开
   python scripts/upload_youtube.py out/xxx.mp4 --privacy unlisted
-  python scripts/upload_youtube.py out/xxx.mp4 --privacy public
+  python scripts/upload_youtube.py out/xxx.mp4 --privacy private
 
-注意：Google 的项目在通过 API 合规审核前，用 API 上传的视频会被强制锁成 private，
-在后台手动改公开即可；要长期直接发公开，得去申请 audit。上传一条消耗 1600 单位配额，
-默认每天 10000 单位，也就是一天最多 6 条。
+注意：网上常说"项目没过 API 合规审核前，API 传的视频会被强制锁成 private"——
+这条在本项目实测不成立（2026-08-07 请求 private，落地是 public）。
+所以上传后一律回读校验实际隐私状态，不符就非零退出。
+配额：上传一条消耗 1600 单位，默认每天 10000，也就是一天最多 6 条。
 """
 import argparse
 import json
@@ -232,9 +233,9 @@ def main():
     parser.add_argument("video", nargs="?", help="视频文件路径")
     parser.add_argument(
         "--privacy",
-        default="private",
-        choices=["private", "unlisted", "public"],
-        help="默认 private，确认没问题再改",
+        default="public",
+        choices=["public", "unlisted", "private"],
+        help="默认 public。想先自己审一眼再放出去就传 unlisted 或 private",
     )
     parser.add_argument(
         "--auth-only", action="store_true", help="只走一次授权，拿到 token 就退出"
