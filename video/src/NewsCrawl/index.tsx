@@ -18,6 +18,7 @@ import { z } from "zod";
 import { buildKeywords, groupChineseCaptions, type Page } from "../lib/pages";
 import { loadFont } from "../load-font";
 import { CrawlLine } from "./CrawlLine";
+import { SECTION_CARD_FRAMES, SectionCard } from "./SectionCard";
 import { Intro, INTRO_FRAMES } from "./Intro";
 import { Outro, OUTRO_FRAMES } from "./Outro";
 import { StarField } from "./StarField";
@@ -36,6 +37,13 @@ const WINDOW_BEFORE = 16;
 const WINDOW_AFTER = 4;
 /** 念完之后文字继续飘远的速度（像素/毫秒） */
 const TAIL_DRIFT = 0.09;
+
+/** sections.py 算好的板块时间轴 */
+type Section = {
+  board: string;
+  emoji: string;
+  startMs: number;
+};
 
 export const newsCrawlSchema = z.object({
   audioFile: z.string(),
@@ -89,6 +97,7 @@ const Crawl: React.FC<{
 }> = ({ audioSrc, captionsSrc, audioFrames }) => {
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [headlines, setHeadlines] = useState<string[]>([]);
+  const [sections, setSections] = useState<Section[]>([]);
   const { delayRender, continueRender } = useDelayRender();
   const [handle] = useState(() => delayRender());
   const frame = useCurrentFrame();
@@ -98,13 +107,18 @@ const Crawl: React.FC<{
   const fetchCaptions = useCallback(async () => {
     try {
       await loadFont();
-      const [capRes, metaRes] = await Promise.all([
+      const [capRes, metaRes, secRes] = await Promise.all([
         fetch(captionsSrc),
         fetch(staticFile("meta.json")),
+        // 没跑过 sections.py 时这个文件不存在，静默降级成没有板块卡
+        fetch(staticFile("sections.json")).catch(() => null),
       ]);
       setCaptions((await capRes.json()) as Caption[]);
       const meta = (await metaRes.json()) as { boards?: { headlines?: string[] }[] };
       setHeadlines((meta.boards ?? []).flatMap((b) => b.headlines ?? []));
+      if (secRes?.ok) {
+        setSections((await secRes.json()) as Section[]);
+      }
       continueRender(handle);
     } catch (e) {
       cancelRender(e);
@@ -189,6 +203,17 @@ const Crawl: React.FC<{
           </div>
         </div>
       </AbsoluteFill>
+
+      {/* 板块卡：盖在 crawl 之上短暂停留，把 7 分钟切成六段 */}
+      {sections.map((section, i) => (
+        <Sequence
+          key={i}
+          from={Math.round((section.startMs / 1000) * fps)}
+          durationInFrames={SECTION_CARD_FRAMES}
+        >
+          <SectionCard board={section.board} emoji={section.emoji} />
+        </Sequence>
+      ))}
     </AbsoluteFill>
   );
 };

@@ -122,6 +122,35 @@ def show_channel(creds):
     )
 
 
+def fmt_ts(ms):
+    """YouTube 章节的时间戳格式：短于一小时用 m:ss，否则 h:mm:ss。"""
+    total = int(ms // 1000)
+    h, m, s = total // 3600, total % 3600 // 60, total % 60
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def load_chapters():
+    """读 sections.py 算好的板块时间轴。没有就返回空，简介照常生成。"""
+    path = ROOT / "public" / "sections.json"
+    if not path.exists():
+        print("[warn] 没有 sections.json，简介里不会有章节。先跑 scripts/sections.py",
+              file=sys.stderr)
+        return []
+    try:
+        chapters = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"[warn] sections.json 读不了：{e}", file=sys.stderr)
+        return []
+    # 第一段必须晚于 0:00（0:00 留给"开场"），且各段间隔不能小于 10 秒，否则 YouTube 整块不认
+    out = []
+    last = 0
+    for c in chapters:
+        if c.get("videoMs", 0) - last >= 10_000:
+            out.append(c)
+            last = c["videoMs"]
+    return out
+
+
 def build_metadata():
     """标题/简介/标签都由当天的 meta.json 生成。"""
     if not META.exists():
@@ -138,9 +167,17 @@ def build_metadata():
         "",
         "内容取自 NYT / Guardian / WSJ / BBC / Reuters / Economist / Bloomberg 等西方主流媒体当日报道，"
         "经 AI 筛选、翻译、整理成中文播报。",
-        "",
-        "—— 本期目录 ——",
     ]
+
+    # YouTube 章节：简介里出现「时间戳 空格 标题」的连续列表就会变成进度条分段。
+    # 规则：必须从 0:00 起、至少 3 段、每段不短于 10 秒，否则整块不生效。
+    chapters = load_chapters()
+    if len(chapters) >= 2:
+        lines += ["", "—— 章节 ——", "0:00 开场"]
+        for c in chapters:
+            lines.append(f"{fmt_ts(c['videoMs'])} {c['emoji']} {c['board']}".strip())
+
+    lines += ["", "—— 本期目录 ——"]
     for board in boards:
         lines.append("")
         lines.append(f"【{board.get('emoji', '')} {board.get('name', '')}】")

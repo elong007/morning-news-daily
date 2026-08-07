@@ -166,6 +166,8 @@ jobs:
         run: |
           python scripts/fetch_script.py ${{ needs.morning-news.outputs.target }}
           python scripts/tts.py
+          # 板块时间轴：视频里插板块卡、简介里生成 YouTube 章节都要用
+          python scripts/sections.py
 
       - name: 渲染
         working-directory: video
