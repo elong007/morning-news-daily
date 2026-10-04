@@ -177,7 +177,7 @@ jobs:
           # 直接渲成投放质量。Remotion 默认 CRF 18 近无损，6 分钟片子 350MB；
           # 这里直接给 23，省掉一次转码——runner 镜像本来也不带 ffmpeg。
           OUT="out/news-${{ needs.morning-news.outputs.target }}.mp4"
-          npx remotion render NewsCrawl "$OUT" --props=props.json --crf 23 --log=info 2>&1 | tail -3
+          npx remotion render NewsFlash "$OUT" --props=props.json --crf 23 --log=info 2>&1 | tail -3
           echo "渲染耗时 $(( ($(date +%s) - start) / 60 )) 分钟"
           ls -lh out/
 
