@@ -6,6 +6,12 @@ import {
   newsCrawlSchema,
 } from "./NewsCrawl";
 import {
+  calculateNewsFlashMetadata,
+  NewsFlash,
+  newsFlashDefaultProps,
+  newsFlashSchema,
+} from "./NewsFlash";
+import {
   calculateNewsReelMetadata,
   NewsReel,
   newsReelDefaultProps,
@@ -34,6 +40,16 @@ export const RemotionRoot: React.FC = () => {
         width={1080}
         height={1920}
         defaultProps={newsReelDefaultProps}
+      />
+      {/* 快闪式：纯黑底，一行比一行大地蹦出来，旧行被挤着往上走 */}
+      <Composition
+        id="NewsFlash"
+        component={NewsFlash}
+        calculateMetadata={calculateNewsFlashMetadata}
+        schema={newsFlashSchema}
+        width={1080}
+        height={1920}
+        defaultProps={newsFlashDefaultProps}
       />
     </>
   );

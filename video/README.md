@@ -6,12 +6,13 @@
 改自 Remotion 官方模板 [template-tiktok](https://github.com/remotion-dev/template-tiktok)，
 但 Whisper 转录整条换掉了，中文分页也是重写的（原因见下）。
 
-## 两个版本
+## 三个版本
 
 | composition | 样子 |
 |---|---|
 | **NewsCrawl**（默认） | 星战片头式：星空里整块文字持续飞向深处，配开场卡和收尾卡 |
 | NewsReel | 一句一屏：螺旋推进入场，重点词放大 |
+| NewsFlash | 抖音快闪式：纯黑底，一行比一行大地蹦出来，旧行被新行挤着往上走 |
 
 ## 一键出片
 
@@ -73,6 +74,26 @@ TTS 的分词会把数字切碎（`二零二六年` → `二零二`/`六`/`年`�
 调观感的旋钮都在 `src/NewsCrawl/index.tsx` 顶部：`TILT` 后仰角、`PERSPECTIVE` 透视强度、
 `ORIGIN_Y` 当前行高度、`LINE_H` 行距、`TAIL_DRIFT` 念完后飘远的速度。
 
+## NewsFlash 的关键点
+
+**字号按出场顺序递增，不是固定档位。** 一页里每新蹦出一行，字号就按 `BASE_SIZE × GROWTH^行号`
+再大一圈（封顶 `SIZE_CAP`），最后一行天然成了最抢眼的"punchline"。整行都是虚词（的/了/但是……）
+的行钉死在最小字号，不管排第几行——不然一个「的」被放到超大会很滑稽。
+
+**旧行被新行"挤"上去，不是瞬移。** 每行的位移 = 它后面所有已出场行的高度之和，每一段位移各自
+挂一条独立的弹簧，新行越往后出现，前面的行就被顶得越多，顶的瞬间带一点回弹，
+不是整体一次性跳到位。
+
+**重点词（数字/关键实体）直接整行渐变色**，不再是单字变色——`markEmphasis` 标出的那几个
+token 所在的行，整行走 `GRADIENT`（蓝到紫），纯色白行与渐变行一眼能分开。
+
+**特别短 + 带重点词的页，不走堆叠。** `isHeroPage` 挑出这种页（≤10 字且命中重点词），
+整句当一行超大蹦出来，省掉堆叠的铺垫，适合"暴涨40%"这种本身就够炸的短句。
+
+调观感的旋钮都在 `src/NewsFlash/FlashPage.tsx` 顶部：`BASE_SIZE`/`GROWTH`/`SIZE_CAP` 决定递增曲线，
+`HERO_SIZE` 单独管重点句，`LINE_GAP` 行距。分行逻辑在 `src/NewsFlash/lines.ts`（`MAX_LINE_CHARS`
+管一行最多几个字，`isHeroPage` 的 10 字门槛）。
+
 ## 结构
 
 ```
@@ -85,6 +106,7 @@ src/NewsCrawl/StarField.tsx    确定性星空
 src/NewsCrawl/Intro.tsx        开场卡
 src/NewsCrawl/Outro.tsx        收尾卡
 src/NewsReel/                  另一版：一句一屏，螺旋推进
+src/NewsFlash/                 另一版：抖音快闪式，逐行递增蹦出
 public/                        script.txt / audio.mp3 / captions.json / 字体
 ```
 

@@ -17,8 +17,8 @@ cd "$(dirname "$0")/.."
 
 PRIVACY="${1:-public}"
 TODAY="$(date +%F)"
-MASTER="out/morning-news-crawl-${TODAY}.mp4"
-WEB="out/morning-news-crawl-${TODAY}-web.mp4"
+MASTER="out/morning-news-flash-${TODAY}.mp4"
+WEB="out/morning-news-flash-${TODAY}-web.mp4"
 
 log() { echo "[$(date +%T)] $*"; }
 
@@ -50,7 +50,7 @@ else
   python scripts/tts.py
 
   log "渲染（约 10 分钟）"
-  npx remotion render NewsCrawl "$MASTER" --props=props.json
+  npx remotion render NewsFlash "$MASTER" --props=props.json
 
   log "压投放版"
   ffmpeg -v error -i "$MASTER" -c:v libx264 -crf 27 -preset slow \

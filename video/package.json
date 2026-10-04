@@ -12,6 +12,7 @@
     "prepare-content": "npm run fetch && npm run tts",
     "render": "remotion render NewsCrawl out/news-crawl.mp4 --props=props.json",
     "render:reel": "remotion render NewsReel out/news-reel.mp4 --props=props.json",
+    "render:flash": "remotion render NewsFlash out/news-flash.mp4 --props=props.json",
     "encode": "ffmpeg -i out/news-crawl.mp4 -c:v libx264 -crf 27 -preset slow -pix_fmt yuv420p -c:a aac -b:a 128k -movflags +faststart -y out/news-crawl-web.mp4",
     "upload": "python scripts/upload_youtube.py out/news-crawl-web.mp4"
   },
